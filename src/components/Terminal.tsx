@@ -1,12 +1,10 @@
+"use client"
+
 import { useState, useEffect, useCallback, useRef } from "react"
 import { db, type TapResult } from "../store"
 import { reader, type TapEvent } from "../reader"
 import { useReaderStatus } from "../hooks"
 import { tapTag, hexA } from "../tapFormat"
-
-interface TerminalProps {
-  onAdminClick: () => void
-}
 
 // Demo cards that cycle through real students + one unknown
 const DEMO_CARDS = [
@@ -26,7 +24,7 @@ const READER_STATUS: Record<string, { label: string; color: string }> = {
   error: { label: "ERROR", color: "#ff4d6a" },
 }
 
-export default function Terminal({ onAdminClick }: TerminalProps) {
+export default function Terminal() {
   const [now, setNow] = useState(new Date())
   const [lastTap, setLastTap] = useState<TapResult | null>(null)
   const [tapKey, setTapKey] = useState(0)
@@ -234,25 +232,6 @@ export default function Terminal({ onAdminClick }: TerminalProps) {
           <span className="mono text-xs" style={{ color: "#56627a" }}>
             {dateDisplay}
           </span>
-          <button
-            onClick={onAdminClick}
-            className="mono text-xs px-3 py-1.5 rounded transition-all"
-            style={{
-              background: "#111418",
-              color: "#56627a",
-              border: "1px solid #1e2530",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = "#dde2ec"
-              e.currentTarget.style.borderColor = "#2e3540"
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = "#56627a"
-              e.currentTarget.style.borderColor = "#1e2530"
-            }}
-          >
-            ADMIN →
-          </button>
         </div>
       </div>
 

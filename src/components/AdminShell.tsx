@@ -1,6 +1,15 @@
+"use client"
+
 import { type ReactNode } from "react"
 
-export type AdminPage = "overview" | "students" | "cards" | "schedule" | "log" | "devices"
+export type AdminPage =
+  | "overview"
+  | "students"
+  | "cards"
+  | "schedule"
+  | "log"
+  | "devices"
+  | "keys"
 
 interface AdminShellProps {
   page: AdminPage
@@ -216,6 +225,27 @@ const NAV: { id: AdminPage; label: string; icon: ReactNode }[] = [
           strokeLinecap="round"
         />
         <circle cx="8" cy="10.5" r="1.1" fill="currentColor" />
+      </svg>
+    ),
+  },
+  {
+    id: "keys",
+    label: "API Keys",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle
+          cx="6"
+          cy="10"
+          r="2.5"
+          stroke="currentColor"
+          strokeWidth="1.25"
+        />
+        <path
+          d="M8 10h5.5v2M11.5 10V7M9 8.5h.5"
+          stroke="currentColor"
+          strokeWidth="1.25"
+          strokeLinecap="round"
+        />
       </svg>
     ),
   },

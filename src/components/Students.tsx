@@ -1,3 +1,5 @@
+"use client"
+
 import { useState } from "react"
 import { db, type Student, type StudentStatus } from "../store"
 import { importResultMessage } from "../templates"

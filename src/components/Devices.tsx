@@ -1,3 +1,5 @@
+"use client"
+
 import { useState, useEffect } from "react"
 import { reader, type TapEvent } from "../reader"
 import { useReaderStatus } from "../hooks"
@@ -19,6 +21,34 @@ export default function Devices() {
     return reader.subscribeTaps((ev) => {
       setFeed((prev) => [ev, ...prev].slice(0, 30))
     })
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    async function poll() {
+      try {
+        const res = await fetch("/api/v1/taps/recent")
+        if (!res.ok) return
+        const j = await res.json()
+        if (!cancelled && Array.isArray(j.taps) && j.taps.length) {
+          setFeed((prev) => {
+            const seen = new Set<string>()
+            const merged = [...j.taps, ...prev]
+            return merged
+              .filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)))
+              .slice(0, 30)
+          })
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    poll()
+    const t = setInterval(poll, 3000)
+    return () => {
+      cancelled = true
+      clearInterval(t)
+    }
   }, [])
 
   const meta = STATUS_META[status] ?? STATUS_META.disconnected

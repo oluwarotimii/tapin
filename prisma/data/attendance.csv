@@ -1,0 +1,13 @@
+# Roster CSV — attendance backfill (OPTIONAL)
+#
+# Only needed if you want to import historical attendance. Leave empty to skip.
+#
+# Columns: student_id,date,clock_in,clock_out,duration_minutes,status,source
+#   student_id required, must match a student in students.csv
+#   date        YYYY-MM-DD
+#   clock_in    HH:MM
+#   clock_out   optional
+#   duration_minutes optional (computed from clock_in/clock_out if omitted)
+#   status      optional (complete | incomplete), defaults to complete
+#   source      optional label, defaults to "import"
+student_id,date,clock_in,clock_out,duration_minutes,status,source

@@ -1,0 +1,11 @@
+# Roster CSV — students
+#
+# Columns: name,student_id,status
+#   name       required
+#   student_id required, unique (use your LMS/external id)
+#   status     optional (active | inactive), defaults to active
+#
+# Uncomment and edit the example row(s), then run: pnpm db:seed
+#name,student_id,status
+#Maria Santos,2024-001,active
+name,student_id,status

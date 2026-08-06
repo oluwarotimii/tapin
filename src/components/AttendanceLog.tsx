@@ -1,3 +1,5 @@
+"use client"
+
 import { useState, useMemo } from "react"
 import { db, type AttendanceRecord } from "../store"
 
@@ -33,16 +35,17 @@ export default function AttendanceLog() {
   }, [records, filter, search, dateFrom, dateTo])
 
   function handleExport() {
-    const csv = db.exportAttendanceCSV()
-    const blob = new Blob([csv], { type: "text/csv" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `attendance-${new Date().toISOString().slice(0, 10)}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
-    setExportMsg("Exported!")
-    setTimeout(() => setExportMsg(""), 2000)
+    db.exportAttendanceCSV().then((csv) => {
+      const blob = new Blob([csv], { type: "text/csv" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `attendance-${new Date().toISOString().slice(0, 10)}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+      setExportMsg("Exported!")
+      setTimeout(() => setExportMsg(""), 2000)
+    })
   }
 
   const studentRecords = useMemo(() => {

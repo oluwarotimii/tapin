@@ -63,9 +63,9 @@ export const reader = {
     statusListeners.forEach((l) => l())
   },
 
-  simulateTap(cardId: string) {
+  async simulateTap(cardId: string) {
     if (status !== "connected") return
-    const result = db.tap(cardId)
+    const result = await db.tapCard(cardId)
     const ev: TapEvent = {
       id: crypto.randomUUID(),
       cardId,
@@ -76,17 +76,14 @@ export const reader = {
   },
 
   writeCard(cardId: string, studentId: string) {
-    return delay(600).then(() => db.writeCard(studentId, cardId))
+    return delay(300).then(() => db.writeCard(studentId, cardId))
   },
 
   readCard(cardId: string) {
-    return delay(400).then(() => db.readCard(cardId))
+    return delay(200).then(() => db.readCard(cardId))
   },
 
   blankCard(cardId: string) {
-    return delay(600).then(() => {
-      db.blankCard(cardId)
-      return true
-    })
+    return delay(300).then(() => db.blankCard(cardId))
   },
 }

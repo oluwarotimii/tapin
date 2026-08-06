@@ -1,152 +1,138 @@
-# TapIn — Solo Version (v1)
+# TapIn
 
-Tap-and-go RFID attendance. Student taps card → clock in. Taps again after their scheduled minimum time → clock out. Built for **one terminal, one admin, one schedule**.
+Tap-and-go RFID attendance system. Student taps card → clock in. Taps again after their scheduled minimum time → clock out.
 
-> Full product details: [PRD.md](./PRD.md) · Feasibility breakdown: [GAPS.md](./GAPS.md)
+> Full product details: [PRD.md](./PRD.md) · Feasibility breakdown: [GAPS.md](./GAPS.md) · **Developer API docs: [docs/API.md](./docs/API.md)**
 
 ---
 
 ## What this version does
 
 - ✅ Tap in / tap out with automatic validation (schedule window + minimum session length)
-- ✅ Admin adds students (one by one **or via CSV**)
-- ✅ Admin sets the schedule (one for everyone) **or imports it via CSV**
-- ✅ Admin writes student details onto the card, reads a card, and blanks/reuses a card
-- ✅ Attendance log with **CSV export** (LMS handoff later)
-- ❌ Not yet: LMS integration, multiple terminals, groups, analytics
+- ✅ **Off-schedule taps are auto-accepted and flagged** (`override`) so sudden schedule changes don't block students
+- ✅ Real admin login (hashed passwords, httpOnly session cookie) with **first-run setup**
+- ✅ Admin adds students one by one **or via unified CSV** (students + per-student schedules in one file)
+- ✅ Per-student schedules with a default template
+- ✅ Admin writes/reads/blanks cards
+- ✅ Attendance log with **CSV export**
+- ✅ **Scoped API keys** — external apps (LMS integrations) can push students/schedules/attendance and read data over `POST/GET /api/v1/*`
+- ❌ Not yet: real NFC reader (companion service), multiple terminals, analytics
 
 ---
 
-## Hardware & setup (what you need)
+## Tech stack
 
-| Item | Example | Notes |
-|------|---------|-------|
-| USB NFC reader | ACR122U, PN532, or any PC/SC reader | Plug-and-play at OS level |
-| Cards | **NTAG213** (recommended) or MIFARE Classic 1K | NTAG = simplest, no keys |
-| PC / Raspberry Pi | Any machine with USB | Runs the app + companion service |
-| nfc-pcsc driver | `nfc-pcsc` (Node) | The bridge between browser and reader |
+- **Next.js 16** (App Router) — pages + REST API routes
+- **PostgreSQL** — storage, via **Prisma**
+- **Tailwind CSS v4** — styling (`@tailwindcss/postcss`)
+- **Auth** — jose JWT sessions (httpOnly cookie) + bcryptjs; API keys are `tp_…` with scoped access, SHA-256-hashed at rest
 
-> The browser cannot talk to the reader directly. A small **companion service** runs on the same PC as the reader and relays taps + card read/write commands to the web app over localhost.
+---
+
+## Setup
+
+```
+docker run -d --name tapin-postgres \
+  -e POSTGRES_USER=tapin -e POSTGRES_PASSWORD=tapin_dev_pw -e POSTGRES_DB=tapin \
+  -p 5434:5432 postgres:16-alpine
+```
+
+```
+cp .env.example .env        # set DATABASE_URL + AUTH_SECRET
+pnpm install
+pnpm db:migrate             # apply schema
+pnpm db:seed                # load roster from prisma/data/*.csv (resets students/schedules)
+pnpm dev                    # http://0.0.0.0:8443
+```
+
+First load → **create the admin account** (`/setup`), then sign in at `/login`.
+
+**Kiosk vs Admin:** `/terminal` (and `/`) is a public, login-free tap kiosk with no admin buttons. Admin lives at `/admin` — `src/proxy.ts` (Next middleware) redirects it to `/login` whenever the session cookie is missing/expired, so entering admin always requires the password.
+
+### Seeding real data
+
+Fill in the roster CSVs under `prisma/data/`, then run `pnpm db:seed` (re-runnable — resets students, schedules, attendance and API keys, keeps the admin account):
+
+- `students.csv` — `name,student_id,status`
+- `schedules.csv` — leave `student_id` empty for the default template, or set a per-student week (`student_id,day,start,end,minimum_minutes`)
+- `attendance.csv` — optional historical backfill (`student_id,date,clock_in,clock_out,duration_minutes,status,source`)
+
+Each file ships with commented example rows.
+
+---
+
+## REST API for external apps (LMS integrations)
+
+All `/api/v1/*` endpoints require `Authorization: Bearer tp_…` (or the admin session). Exception: the public tap kiosk — `GET /students`, `GET /schedule`, `GET /sessions`, `POST /taps` accept anonymous requests (sanitized; see `docs/API.md`). Admin (`/admin`) always requires a password login.
+
+Create keys in **Admin → API Keys** with a set of scopes:
+
+| Scope | Grants |
+|-------|--------|
+| `students_read` / `students_write` | `GET/POST /api/v1/students`, `PATCH/DELETE /api/v1/students/[id]` |
+| `schedules_read` / `schedules_write` | `GET/POST /api/v1/schedule`, `/api/v1/students/[id]/schedule` |
+| `attendance_read` | `GET /api/v1/attendance`, `/api/v1/sessions`, `/api/v1/attendance/export` |
+| `attendance_write` | `POST /api/v1/attendance` (push records) |
+| `taps_write` | `POST /api/v1/taps` (real reader/companion taps) |
+| `cards_write` | `POST /api/v1/cards` (write/blank) |
+
+Example — fetch attendance:
+
+```
+curl -H "Authorization: Bearer tp_…" http://host/api/v1/attendance
+```
+
+Example — a companion NFC service posting a tap:
+
+```
+curl -X POST -H "Authorization: Bearer tp_…" \
+  -H "Content-Type: application/json" \
+  -d '{"card_id":"CARD-A1B2"}' \
+  http://host/api/v1/taps
+```
+
+A missing scope returns `403`; an invalid/revoked key returns `401`.
 
 ---
 
 ## CSV imports
 
-### Students CSV (`students.csv`)
-```
-name,student_id,status
-Maria Santos,2024-001,active
-Juan Cruz,2024-002,active
-Ana Reyes,2024-003,inactive
-```
-- `name` — required
-- `student_id` — required, must be unique
-- `status` — optional, defaults to `active` (`active` or `inactive`)
+### Unified file — students + their schedules
 
-### Schedule CSV (`schedule.csv`)
 ```
-day,start,end,minimum_minutes
-monday,08:00,17:00,180
-tuesday,08:00,17:00,180
-saturday,09:00,12:00,120
+name,student_id,status,day,start,end,minimum_minutes
+Maria Santos,2024-001,active,monday,08:00,12:00,180
+Maria Santos,2024-001,active,tuesday,08:00,12:00,180
+Juan Cruz,2024-002,active,tuesday,13:00,17:00,120
 ```
-- `day` — monday…sunday
-- `start` / `end` — 24h clock-in window (`HH:MM`)
-- `minimum_minutes` — **the tap-out rule**: student cannot clock out until this many minutes have passed since clock-in (e.g. `180` = 3 hours, `120` = 2 hours)
 
-> On the **Students** page: *Import CSV*. On the **Schedule** page: *Import CSV*. Format columns exactly as above.
+- Rows **with** `name` + `student_id` create/update a student (and set that student's schedule for that day).
+- Rows **without** a student set the **default template** schedule.
+- Import from **Students** or **Schedule** pages, or `POST /api/v1/import` (requires `students_write`).
 
 ---
 
-## Cards — write, read, blank, reuse
-
-The card stores a small record only:
-
-```
-[ TapIn marker ] [ student card ID ]
-```
-
-The student's real info (name, student ID) lives in the **database**. The card is just a key.
-
-### Write a card
-1. Admin → **Cards** screen
-2. Choose student (from list, or type student ID)
-3. Hold card on reader → *"Card detected"*
-4. Click **Write** → confirmation shown
-5. Card now linked to that student
-
-### Read a card
-1. **Cards** screen → **Read**
-2. Hold card on reader
-3. Shows: marker (is it a TapIn card?), card ID, linked student (if any)
-
-### Blank / reuse a card
-1. **Cards** screen → **Blank**
-2. Hold card on reader
-3. Card ID is wiped → card is reusable for a different student
-
----
-
-## Card reusability — how it works (important)
-
-Cards are **reusable by design**. Every blank simply wipes the stored card ID.
-
-One trade-off to know:
-
-> A card you can rewrite is a card **anyone** with a reader *could* rewrite.
-
-That's why the card only holds a random ID and the student mapping stays in your DB. Even if someone rewrites or clones a card, it won't match any student in your database — it just stops working. That's the safety model.
-
-If you want *stronger* protection later:
-- **MIFARE Classic keys** — secret write keys, cards stay reusable, but only devices holding the key can write.
-- **NTAG permanent write-lock** — irreversible lock; nobody (not even you) can rewrite; card becomes single-use.
-
-For solo v1, keep cards writable + DB-as-truth. It's the right balance.
-
----
-
-## Screens (for Figma/React)
-
-1. **Login** — admin password only
-2. **Terminal** — the big always-on tap screen (clock, status, last events)
-3. **Students** — list, add/edit, deactivate, CSV import, link/write card
-4. **Cards** — write / read / blank a card
-5. **Schedule** — set day/window/minimum time, CSV import
-6. **Attendance Log** — filter, view, export CSV
-7. **Admin shell** — sidebar nav shared by pages 3–6
-
----
-
-## Tap rules (what the app decides on each tap)
+## Tap rules
 
 | State | Tap result |
 |-------|-----------|
 | Not clocked in, inside schedule window | ✅ Clock in |
+| Not clocked in, **outside** schedule window | ✅ Clock in (flagged **off-schedule**) |
 | Clocked in, minimum time passed | ✅ Clock out |
 | Clocked in, minimum time NOT passed | ❌ "X min remaining" |
-| Not clocked in, outside schedule | ❌ "No session right now" |
 | Unknown / inactive card | ❌ "Card not recognized" |
 | Already completed today | ❌ "Session already complete" |
 
 ---
 
-## Data & export
+## Cards
 
-- Every tap is logged: timestamp, card, student, action, status, reason
-- **Attendance Log** → **Export CSV** (`attendance.csv`):
-  ```
-  date,student_id,name,clock_in,clock_out,duration_minutes,status
-  2026-08-05,2024-001,Maria Santos,08:03,11:01,178,complete
-  ```
+The card holds only a marker + a random card ID. The real student mapping lives in the **database** — the card is just a key. Blanks wipe the mapping so a card is reusable. Even if someone rewrites/clones a card, it won't match any student.
 
 ---
 
-## Dev notes / tech stack
+## Dev notes
 
-- **Next.js** (App Router) — UI + API routes
-- **SQLite** — storage (Postgres later)
-- **nfc-pcsc** (Node) — companion service for the reader
-- **WebSocket / HTTP on localhost** — companion app ↔ web app
-- **Tailwind** — UI styling
-
-Suggested build order: Terminal + tap flow → rules engine → Students → Schedule → CSV → Cards → Log/export.
+- Reader is **simulated** on the client (`src/reader.ts`). The real companion service will call `POST /api/v1/taps` with a `taps_write` key.
+- Live tap feed is in-process (per server instance); `GET /api/v1/taps/recent` returns recent events.
+- Verify with `npx tsc --noEmit` and `pnpm build`. Formatter is **prettier** (oxfmt is broken and must not be used).

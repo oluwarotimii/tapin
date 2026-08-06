@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime @default(now())
+}
+
+enum ApiKeyScope {
+  students_read
+  students_write
+  schedules_read
+  schedules_write
+  attendance_read
+  attendance_write
+  taps_write
+  cards_write
+}
+
+model ApiKey {
+  id         String        @id @default(cuid())
+  name       String
+  prefix     String        @unique
+  keyHash    String        @unique
+  scopes     ApiKeyScope[]
+  active     Boolean       @default(true)
+  lastUsedAt DateTime?
+  createdAt  DateTime      @default(now())
+  expiresAt  DateTime?
+}
+
+enum StudentStatus {
+  active
+  inactive
+}
+
+model Student {
+  id        String        @id @default(cuid())
+  studentId String        @unique
+  name      String
+  status    StudentStatus @default(active)
+  cardId    String?       @unique
+  createdAt DateTime      @default(now())
+  schedule  ScheduleDay[]
+  attendance AttendanceRecord[]
+  session   ActiveSession?
+}
+
+model ScheduleDay {
+  id             String   @id @default(cuid())
+  day            String
+  start          String
+  end            String
+  minimumMinutes Int
+  studentId      String?
+  student        Student? @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([day, start, end, minimumMinutes, studentId])
+  @@index([studentId])
+}
+
+enum AttendanceStatus {
+  complete
+  incomplete
+  in_progress
+}
+
+model AttendanceRecord {
+  id              String           @id @default(cuid())
+  studentId       String
+  student         Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  date            String
+  clockIn         String
+  clockOut        String?
+  durationMinutes Int?
+  status          AttendanceStatus @default(in_progress)
+  override        Boolean          @default(false)
+  source          String           @default("tap")
+
+  @@unique([studentId, date])
+  @@index([date])
+  @@index([studentId, date])
+}
+
+model ActiveSession {
+  id          String   @id @default(cuid())
+  studentId   String   @unique
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  cardId      String
+  clockedInAt DateTime @default(now())
+}

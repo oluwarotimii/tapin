@@ -1,3 +1,5 @@
+"use client"
+
 import { useState, useEffect } from "react"
 import { useStore } from "../hooks"
 import { db } from "../store"

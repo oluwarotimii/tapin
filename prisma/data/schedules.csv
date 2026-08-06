@@ -1,0 +1,15 @@
+# Roster CSV — schedules
+#
+# Columns: student_id,day,start,end,minimum_minutes
+#   day            required (sunday..saturday)
+#   start / end    24h HH:MM tap-in window
+#   minimum_minutes the minimum session length (tap-out rule)
+#
+# Leave student_id EMPTY to set the DEFAULT template — it applies to every
+# student who does not have their own schedule.
+# A student_id (must match a row in students.csv) sets that student's own week.
+#
+# Examples:
+#   default template:  ,monday,08:00,17:00,120
+#   per-student week:  2024-001,monday,08:00,12:00,180
+student_id,day,start,end,minimum_minutes

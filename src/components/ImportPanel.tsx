@@ -1,3 +1,5 @@
+"use client"
+
 import { useState, useRef } from "react"
 import { db, parseCSV, type CSVImportResult } from "../store"
 import {
@@ -43,7 +45,13 @@ export default function ImportPanel({ onResult }: ImportPanelProps) {
     reader.onload = (ev) => {
       const text = ev.target?.result as string
       const rows = parseCSV(text)
-      onResult(rows.length > 0 ? db.importUnifiedCSV(rows) : null)
+      if (rows.length === 0) {
+        onResult(null)
+        return
+      }
+      db.importUnifiedCSV(rows)
+        .then((r) => onResult(r))
+        .catch(() => onResult(null))
     }
     reader.readAsText(file)
     e.target.value = ""

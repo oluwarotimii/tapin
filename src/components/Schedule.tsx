@@ -1,3 +1,5 @@
+"use client"
+
 import { useState, useEffect } from "react"
 import { db, type ScheduleDay } from "../store"
 import { importResultMessage } from "../templates"

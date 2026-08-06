@@ -1,3 +1,5 @@
+"use client"
+
 import { useState } from "react"
 import { db, generateCardId } from "../store"
 import { reader } from "../reader"
