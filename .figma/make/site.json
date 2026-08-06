@@ -1,0 +1,11 @@
+{
+  "title": "TapIn",
+  "description": "Streamline attendance tracking with tap-and-go RFID technology, allowing students to clock in and out easily while enabling admins to manage schedules and logs efficiently.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
