@@ -209,29 +209,40 @@ await sdk.stopAcquisition()
 
 `Fingerprint.SampleFormat` has four values: `PngImage`, `Raw`, `Compressed`
 (WSQ), `Intermediate` (DigitalPersona's own extracted feature set — **not**
-NBIS-compatible, don't use it if pairing with `mindtct`/`bozorth3`; use
-`Raw` or `PngImage` instead so §3/§6's NBIS pipeline can consume it directly
-without needing to understand DigitalPersona's proprietary format). For
-non-`PngImage` formats, sample data arrives double-encoded — decode with the
-SDK's own `Fingerprint.b64UrlTo64()` then `Fingerprint.b64UrlToUtf8()`
-helpers before you get the actual base64 payload (see the reference app's
-`sampleAcquired()` for the exact unwrap sequence).
+NBIS-compatible, don't use it if pairing with `mindtct`/`bozorth3`). This
+repo's implementation (below) uses `PngImage` — it decodes with a single
+`Fingerprint.b64UrlTo64()` call, unlike `Raw`/`Compressed` which arrive
+double-encoded (JSON-wrapped inside the base64 payload) and weren't worth
+guessing the exact unwrap sequence for without hardware to test against.
 
 **No identify/match method exists in this client SDK** — confirmed capture
 -only, same limitation as Futronic (§3 applies).
 
-**Practical integration point in this repo**: since capture is pure
-browser JS talking to a device already running locally, it plugs in at a
-different layer than §4's Node bridge. `src/lib/fingerprintBridge.ts`
-currently assumes *all* of `/status`/`/capture`/`/identify` are server-side
-bridge calls — for DigitalPersona, `/capture`'s implementation would
-instead call `Fingerprint.WebApi` directly in the browser (in
-`Fingerprints.tsx`/`Terminal.tsx`), then POST the raw sample to a small
-local matching-only service (§4) for `/identify`, or straight to
-`/api/v1/students/:id/fingerprint` for enroll. This is a real, small
-refactor of `fingerprintBridge.ts` to make when you're ready to wire this
-up for real — not done yet, since it changes call sites in three files and
-is worth doing deliberately rather than as a drive-by.
+**Implemented in this repo:**
+
+- `public/vendor/digitalpersona/{fingerprint.sdk.min.js,websdk.client.bundle.min.js}`
+  — the vendored WebSDK files (see that directory's `README.md` for
+  provenance).
+- `src/lib/digitalPersona.ts` — lazy-loads the two scripts, exposes
+  `isDigitalPersonaAvailable()` and `captureDigitalPersonaSample()` (starts
+  acquisition, resolves with the first PNG sample, stops acquisition).
+- `src/lib/fingerprintBridge.ts` — `bridgeStatus()`/`bridgeCapture()` try
+  DigitalPersona first, falling back to the generic local HTTP bridge (§4)
+  for other vendors. `bridgeIdentify()` is unchanged — generic bridge only,
+  since DigitalPersona's WebSDK can't identify/match.
+- `src/lib/validation.ts` — `fingerprintEnroll`'s template length cap raised
+  from 20,000 to 2,000,000 chars; a real base64 PNG capture blows past the
+  old limit.
+
+**Not yet done / can't be verified without the physical reader + Lite
+Client**: an actual capture round-trip. The code path is real (no fake
+data), but this environment has no Windows machine or U.are.U 4500 to
+exercise it against — test the Admin → Fingerprints enroll flow on the
+machine with the reader attached.
+
+**Still open**: tap-time auto-identification (`bridgeIdentify`) stays
+"not connected" until the matching bridge (§4/§6) exists — DigitalPersona's
+capture being solved doesn't solve matching, see §3.
 
 **Self-signed cert caveat**: because the Lite Client serves HTTPS on
 `127.0.0.1` with a self-signed cert, the browser will likely need a one-time
