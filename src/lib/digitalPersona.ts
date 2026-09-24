@@ -79,7 +79,9 @@ export async function isDigitalPersonaAvailable(): Promise<boolean> {
   }
 }
 
-const CAPTURE_TIMEOUT_MS = 15000
+// Matches the 30s "scanning" window shown in the UI (Terminal's scan
+// button, FingerprintScan.tsx) — how long we'll wait for a finger.
+const CAPTURE_TIMEOUT_MS = 30000
 
 // Unwraps a Compressed (WSQ) sample per the reference app's sampleAcquired():
 // samples[0].Data is base64url -> b64UrlTo64 -> base64-decode-to-utf8 ->

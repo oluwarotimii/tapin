@@ -17,13 +17,18 @@ Terminal / Fingerprints.tsx (browser)
    ▼
 src/lib/digitalPersona.ts ──WSQ sample (base64)──┐
    │                                              │
-   │ enroll: POST /api/v1/students/:id/fingerprint│ identify: POST /api/v1/fingerprint/identify
-   ▼                                              ▼
-Postgres (FingerprintTemplate.template, bytea)   src/server/fingerprintMatch.ts
-                                                   │  compares live scan against every
-                                                   │  enrolled template (nbis-js, WASM)
+   │ enroll: POST /api/v1/students/:id/fingerprint│ verify: POST /api/v1/fingerprint/verify
+   │                                              │ body includes student_id — the caller
+   ▼                                              │ already knows who they're checking,
+Postgres (FingerprintTemplate.template, bytea)   │ picked via search, not guessed
                                                    ▼
-                                             { matched, student_id }
+                                             src/server/fingerprintMatch.ts
+                                             compares the live scan against
+                                             ONLY that student's template
+                                             (nbis-js, WASM) — 1:1, not 1:N
+                                                   │
+                                                   ▼
+                                    { result: "matched" | "no_match" | "not_enrolled" }
 ```
 
 **No local bridge process exists or is needed.** Capture talks directly
@@ -33,6 +38,17 @@ that's a serverless function, not a service you deploy or manage
 separately. This is simpler than the original plan (§"Futronic" below),
 which assumed matching would always need a local Windows service running
 `mindtct`/`bozorth3` binaries.
+
+**Why 1:1, not 1:N**: an earlier version of this let the Terminal kiosk
+just "place your finger" and identify who it was by comparing against
+every enrolled student. That doesn't hold up at scale — cost grows
+linearly with enrollment count, and worse, 1:N *accuracy* degrades as the
+candidate pool grows (more templates compared = more chances of a
+coincidental match past the threshold). The current design instead has the
+student search their own name/ID first (`src/components/FingerprintScan.tsx`,
+reusing the same search UI as enrollment), then scans just to confirm it's
+them — a single comparison, correct regardless of whether there are 50 or
+5,000 enrolled students.
 
 ---
 
@@ -88,10 +104,11 @@ Fingerprint" button).
 
 ## 3. Matching: `nbis-js` (NIST NBIS compiled to WebAssembly)
 
-`src/server/fingerprintMatch.ts` runs real `mindtct`+`bozorth3` (via the
-`nbis-js` npm package) **server-side**, comparing a live WSQ scan against
-every `FingerprintTemplate` row until it finds a match or exhausts the
-list. Default match threshold is 40 (the package's own default) —
+`src/server/fingerprintMatch.ts`'s `verifyStudentFingerprint()` runs real
+`mindtct`+`bozorth3` (via the `nbis-js` npm package) **server-side**,
+comparing a live WSQ scan against exactly one student's stored
+`FingerprintTemplate` row (1:1, not a loop over every enrolled student —
+see §1). Default match threshold is 40 (the package's own default) —
 **unverified against real fingerprints, needs tuning with an actual pilot
 group** once hardware is available.
 
@@ -127,23 +144,24 @@ and disturb its own environment detection.
 ### Robustness
 
 `checkDuplicateFingerFromBase64` **throws** (rather than returning `false`)
-on malformed WSQ input — confirmed directly. `findMatchingStudent` catches
-per-comparison, so one corrupt enrolled template (or a bad live scan)
-can't take down the whole identify request; it just gets skipped.
+on malformed WSQ input — confirmed directly. `verifyStudentFingerprint`
+catches this, so a corrupt template (or a bad live scan) resolves to
+`"no_match"` instead of a 500.
 
 ### API
 
-`POST /api/v1/fingerprint/identify` — public like `/api/v1/taps` (no admin
+`POST /api/v1/fingerprint/verify` — public like `/api/v1/taps` (no admin
 session required; the kiosk calls it directly), scope `taps_write`, body
-`{ image: "<base64 wsq>" }`, response `{ matched: true, student_id }` or
-`{ matched: false }`.
+`{ student_id, image: "<base64 wsq>" }`, response
+`{ result: "matched" | "no_match" | "not_enrolled" }`. `not_enrolled` is
+distinguished from `no_match` so the UI can give a clearer error (see
+`src/components/FingerprintScan.tsx`) — "you haven't enrolled a print yet"
+versus "that didn't match."
 
 ### Performance
 
-O(n) in enrolled-student count — every identify call runs up to n WASM
-comparisons sequentially. Fine at school scale (hundreds of students);
-would need real optimization (indexing, parallelization, or a proper
-biometric search structure) far beyond that.
+O(1) — a single WASM comparison per verify call, regardless of how many
+students are enrolled. This was the point of switching from 1:N (§1).
 
 **Verification status**: confirmed the WASM genuinely executes inside
 Next's server runtime and handles malformed input gracefully. **Not
@@ -159,18 +177,22 @@ hardware and a real pilot group, which this environment doesn't have.
   a generic local HTTP bridge contract (`NEXT_PUBLIC_FINGERPRINT_BRIDGE_URL`,
   default `http://127.0.0.1:8787`) for any other vendor — nothing listens
   there today, so that fallback genuinely reports "not connected."
-- `bridgeIdentify()`: captures via DigitalPersona, POSTs to
-  `/api/v1/fingerprint/identify`, returns the matched `student_id` or
-  `null`. Falls back to the generic bridge's `/identify` for other vendors.
-- `src/components/Terminal.tsx` runs a background loop calling
-  `bridgeIdentify()` in a cycle whenever the reader is armed, feeding a
-  match into `reader.submitFingerprintTap(studentId)` — same tap-event
-  pipeline as card taps. **Paused while the enroll modal is open** — both
-  capture from the same physical reader, and two concurrent acquisitions on
-  one device fight each other.
-- `src/components/FingerprintEnroll.tsx` (Terminal's self-service modal)
-  and `src/components/Fingerprints.tsx` (admin) both call `bridgeCapture()`
-  for enrollment — no vendor-specific code in either component.
+- `verifyFingerprint(studentId)`: captures via DigitalPersona (or the
+  generic bridge's `/capture` as a fallback), POSTs to
+  `/api/v1/fingerprint/verify` with that one `studentId`, returns
+  `"matched" | "no_match" | "not_enrolled" | "capture_failed"`.
+- `src/components/FingerprintScan.tsx` — the Terminal kiosk's tap-time flow:
+  search your name/ID, pick yourself, scan (30s window —
+  `CAPTURE_TIMEOUT_MS` in `digitalPersona.ts`). On `"matched"`, calls
+  `reader.submitFingerprintTap(studentId)` — same tap-event pipeline as
+  card taps, so Terminal's existing status display shows the clock-in/out
+  result; the modal itself just closes. On any other outcome, shows a
+  specific error message with a retry option (except `not_enrolled`, where
+  retrying a scan can't help — points at enrollment instead).
+- `src/components/FingerprintEnroll.tsx` (Terminal's self-service
+  enrollment modal, separate from `FingerprintScan.tsx`) and
+  `src/components/Fingerprints.tsx` (admin) both call `bridgeCapture()` for
+  enrollment — no vendor-specific code in either component.
 
 ---
 
@@ -180,12 +202,17 @@ hardware and a real pilot group, which this environment doesn't have.
   Before trusting this for attendance: test with a real pilot group, tune
   the threshold, check false-accept/false-reject rates.
 - **AGPL license review** — see §3.
-- **Self-serve enrollment has no identity check** (`src/components/
-  FingerprintEnroll.tsx`): anyone at the kiosk can search any student's
-  name and enroll a fingerprint under it, not just their own. Fine for a
-  card (physical possession is the check); weaker for something meant to
-  prove identity. Not fixed — flagging it here so it isn't forgotten.
-- **1:N performance** at real scale — see §3.
+- **Self-serve enrollment and self-serve verify both have no identity
+  check** (`src/components/FingerprintEnroll.tsx`,
+  `src/components/FingerprintScan.tsx`): anyone at the kiosk can search any
+  student's name and enroll a fingerprint under it or attempt to verify
+  against it — nothing ties the *search* step to the person physically at
+  the reader. Fine for a card (physical possession is the check); weaker
+  for something meant to prove identity. Not fixed — flagging it here so
+  it isn't forgotten.
+- **One fingerprint per student** (`FingerprintTemplate.studentId` is
+  `@unique`) — re-enrolling replaces the old scan. This was a deliberate
+  simplification, not a limitation to work around.
 
 ---
 

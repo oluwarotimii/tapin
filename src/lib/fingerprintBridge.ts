@@ -5,10 +5,11 @@
 // 1. DigitalPersona's WebSDK (src/lib/digitalPersona.ts) — talks directly
 //    to the locally-installed "Digital Persona Lite Client" from the
 //    browser for capture, then POSTs the scan to this app's own
-//    /api/v1/fingerprint/identify route for matching (nbis-js, runs
-//    server-side — see src/server/fingerprintMatch.ts and
-//    docs/fingerprint-integration.md). No local bridge process needed for
-//    either step. Tried first, since it's the confirmed-working path.
+//    /api/v1/fingerprint/verify route for a 1:1 match against the one
+//    student the caller already picked (nbis-js, runs server-side — see
+//    src/server/fingerprintMatch.ts and docs/fingerprint-integration.md).
+//    No local bridge process needed for either step. Tried first, since
+//    it's the confirmed-working path.
 // 2. A generic local HTTP bridge (this file's original design, for any
 //    other vendor, e.g. Futronic) — no bridge is deployed for that yet, so
 //    those calls genuinely report "not connected" until one exists.
@@ -43,10 +44,7 @@ export async function bridgeStatus(): Promise<boolean> {
   return genericBridgeStatus()
 }
 
-export async function bridgeCapture(): Promise<string | null> {
-  const dpSample = await captureDigitalPersonaSample()
-  if (dpSample) return dpSample
-
+async function genericBridgeCapture(): Promise<string | null> {
   try {
     const res = await fetch(`${BRIDGE_URL}/capture`, {
       method: "POST",
@@ -60,37 +58,39 @@ export async function bridgeCapture(): Promise<string | null> {
   }
 }
 
-// Blocks until a finger is presented (DigitalPersona's startAcquisition) or
-// times out, then asks the server to match it against every enrolled
-// template. Callers loop this while the bridge is connected.
-export async function bridgeIdentify(): Promise<string | null> {
-  if (await isDigitalPersonaAvailable()) {
-    const sample = await captureDigitalPersonaSample()
-    if (!sample) return null
-    try {
-      const res = await fetch("/api/v1/fingerprint/identify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: sample }),
-        signal: withTimeout(15000),
-      })
-      if (!res.ok) return null
-      const j = await res.json()
-      return j.matched && typeof j.student_id === "string" ? j.student_id : null
-    } catch {
-      return null
-    }
-  }
+export async function bridgeCapture(): Promise<string | null> {
+  const dpSample = await captureDigitalPersonaSample()
+  return dpSample ?? genericBridgeCapture()
+}
 
+export type VerifyOutcome = "matched" | "no_match" | "not_enrolled" | "capture_failed"
+
+async function postVerify(studentId: string, image: string): Promise<VerifyOutcome> {
   try {
-    const res = await fetch(`${BRIDGE_URL}/identify`, {
+    const res = await fetch("/api/v1/fingerprint/verify", {
       method: "POST",
-      signal: withTimeout(30000),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ student_id: studentId, image }),
+      signal: withTimeout(15000),
     })
-    if (!res.ok) return null
+    if (!res.ok) return "capture_failed"
     const j = await res.json()
-    return j.matched && typeof j.studentId === "string" ? j.studentId : null
+    return j.result === "matched" || j.result === "no_match" || j.result === "not_enrolled"
+      ? j.result
+      : "capture_failed"
   } catch {
-    return null
+    return "capture_failed"
   }
+}
+
+// 1:1 verification: the caller already knows who they're checking (picked
+// from a search), so this captures one scan and confirms it against just
+// that student's enrolled template — not a 1:N "who is this" search.
+export async function verifyFingerprint(studentId: string): Promise<VerifyOutcome> {
+  const dpAvailable = await isDigitalPersonaAvailable()
+  const sample = dpAvailable
+    ? await captureDigitalPersonaSample()
+    : await genericBridgeCapture()
+  if (!sample) return "capture_failed"
+  return postVerify(studentId, sample)
 }

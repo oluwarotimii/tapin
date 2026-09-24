@@ -46,7 +46,8 @@ export const fingerprintEnroll = z.object({
   template: z.string().min(1).max(2_000_000),
 })
 
-export const fingerprintIdentify = z.object({
+export const fingerprintVerify = z.object({
+  student_id: z.string().min(1).max(60),
   image: z.string().min(1).max(2_000_000),
 })
 
