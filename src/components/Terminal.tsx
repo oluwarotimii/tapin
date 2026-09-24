@@ -51,13 +51,14 @@ export default function Terminal() {
     onCard: (cardId) => performTap(cardId),
   });
 
-  // Background loop against the local fingerprint bridge
-  // (docs/fingerprint-integration.md). Blocks on /identify until a match or
-  // timeout, then feeds the result into the same tap-event stream as card
-  // taps. No bridge is deployed yet, so this genuinely idles/no-ops until
-  // one exists — it is not a simulation.
+  // Background loop against the fingerprint bridge (docs/fingerprint-
+  // integration.md). Blocks on bridgeIdentify() until a match or timeout,
+  // then feeds the result into the same tap-event stream as card taps.
+  // Paused while the enroll modal is open — both capture from the same
+  // physical reader, and two concurrent acquisitions on one device fight
+  // each other.
   useEffect(() => {
-    if (readerStatus !== "connected") return;
+    if (readerStatus !== "connected" || showEnroll) return;
     let cancelled = false;
     (async () => {
       while (!cancelled) {
@@ -73,7 +74,7 @@ export default function Terminal() {
     return () => {
       cancelled = true;
     };
-  }, [readerStatus]);
+  }, [readerStatus, showEnroll]);
 
   useEffect(() => {
     return reader.subscribeTaps((ev) => {

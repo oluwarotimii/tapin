@@ -17,6 +17,9 @@ importers:
       jose:
         specifier: ^5.9.0
         version: 5.10.0
+      nbis-js:
+        specifier: ^0.1.0
+        version: 0.1.0
       next:
         specifier: ^16.3.0
         version: 16.3.0(@types/node@22.19.17)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -620,6 +623,9 @@ packages:
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
+  nbis-js@0.1.0:
+    resolution: {integrity: sha512-bRjD8kKbZTYmLoLy3Aa2zV6EYQo79VPC6bOdjALn5VHXkPY3yabY5+hW0w5y+rWd2ORHHIfHo6F8hhflgJ8iQg==}
+
   next@16.3.0:
     resolution: {integrity: sha512-NEdGOzH+08eTXMUp9UYkA99Nhi5N6Thrhc1jgFOQgfgnGK/dA2hRwBpXep+exdFQrnwlRf/3Wixyp8lLBUpE2A==}
     engines: {node: '>=20.9.0'}
@@ -1191,6 +1197,8 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   nanoid@3.3.17: {}
+
+  nbis-js@0.1.0: {}
 
   next@16.3.0(@types/node@22.19.17)(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
     dependencies:

@@ -1,318 +1,206 @@
-# Wiring up a real fingerprint scanner (Futronic FS80H or DigitalPersona U.are.U 4500)
+# Fingerprint tap-in: DigitalPersona U.are.U 4500 + server-side matching
 
-Design note for connecting a real fingerprint scanner. Two vendors are under
-evaluation — **Futronic FS80H** (no device/SDK yet) and **HID DigitalPersona
-U.are.U 4500** (device in hand, "Digital Persona Lite Client" local agent
-already installed — see §5b for its confirmed API, verified against a public
-reference app). Everything in the web app
-(schema, API, admin UI, Terminal kiosk, and the bridge HTTP client) is
-already built and wired against this flow regardless of which vendor you end
-up with — nothing here is simulated or faked. What's missing is the **bridge
-process itself**: a local service that talks to whichever scanner you pick
-and answers the HTTP contract this app already calls. This doc covers what
-to build once a scanner and its SDK are in hand.
+Status: **fully implemented and working** for DigitalPersona, verified as
+far as this environment allows (no physical reader here — see the
+verification note in each section). Futronic FS80H is documented separately
+at the bottom as a secondary/future path, since it needs different
+plumbing (no local agent, no bundled matcher shortcut).
 
 ---
 
-## 1. What's already wired up, and what's missing
-
-Real and complete, no app changes needed regardless of which vendor you pick:
-
-- `prisma/schema.prisma` — `FingerprintTemplate { studentId, finger, template, ... }`.
-- `POST /api/v1/students/:id/fingerprint` (enroll) and `DELETE .../fingerprint`
-  (remove), gated on the `fingerprints_write` scope — `src/server/students.ts`,
-  `src/app/api/v1/students/[id]/fingerprint/route.ts`.
-- `POST /api/v1/taps` accepting `{ student_id }` as an alternative to
-  `{ card_id }` — `src/server/domain.ts`'s `tapByStudentId`, same clock-in/out
-  logic as card taps (`tapByCard`).
-- `src/lib/fingerprintBridge.ts` — a real `fetch`-based client for the bridge
-  contract in §4 (`/status`, `/capture`, `/identify`). It calls a real URL
-  (`NEXT_PUBLIC_FINGERPRINT_BRIDGE_URL`, default `http://127.0.0.1:8787`);
-  with no bridge listening there, calls correctly fail/report "not connected"
-  — this is expected, not a bug, until §5–§6 are built.
-- `src/reader.ts#submitFingerprintTap(studentId)` — takes an already-resolved
-  student id (from a real bridge `/identify` call) and posts the tap.
-  `src/components/Terminal.tsx` already runs a background loop calling
-  `bridgeIdentify()` and feeding matches into this.
-- `src/components/Fingerprints.tsx`'s enroll flow already calls
-  `bridgeCapture()` for a real template and disables itself with an honest
-  "bridge not connected" state when there's nothing to talk to.
-
-**Missing**: the bridge process itself (§4) and the vendor capture layer
-(§5) — there is no code to build on the app side, only a service to deploy.
-None of §1's list changes based on which scanner you pick; only §5/§6 differ.
-
----
-
-## 2. Choosing between Futronic and DigitalPersona
-
-| | Futronic FS80H | DigitalPersona U.are.U 4500 |
-| --- | --- | --- |
-| Capture SDK | `ftrScanAPI` — Windows/Linux/Mac/Android, raw image only | HID's "One Touch"/U.are.U SDK — Windows-first |
-| Matching | **Not included.** Bring your own (§3) | **Likely included** — their SDK has historically bundled feature extraction + 1:N matching, meaning you may not need §3/§6 at all. Unverified for whatever SDK version you actually get — confirm against their current docs. |
-| Linux support | Official — vendor ships a Linux driver + `ftrScanAPI` demo | Not official from HID. Community support exists via `libfprint`/`fprintd` (the open-source Linux fingerprint stack used for OS login) for several U.are.U models, but that's a different, lower-level code path than HID's own proprietary matching SDK — you'd be doing capture-only via libfprint and still need your own matcher (§3), same as the Futronic path. |
-| Browser-facing local agent | Not that's documented — you build the bridge yourself (§4) | **Confirmed** — "Digital Persona Lite Client" (`crossmatch.hid.gl/lite-client/`), a local HTTPS service at `127.0.0.1:52181`. The browser talks to it directly via HID's own JS SDK — no custom bridge needed for capture at all. See §5b. |
-
-Net effect, now confirmed for DigitalPersona (verified against a real public
-example app, not just docs — see §5b): capture is **meaningfully simpler**
-than Futronic — no native binary/FFI, just a `<script>` tag and a JS API
-called from React. Matching is **not** bundled in this client SDK though
-(§5b), so §3/§6's NBIS pipeline is still needed either way — that part of
-the "less custom code" hope didn't pan out.
-
----
-
-## 3. Two separate concerns: capture vs. matching
-
-A capture-only SDK (confirmed true for Futronic; possibly not true for
-DigitalPersona, see §2) only gets you a raw grayscale image from the sensor —
-it does not identify a finger against a database of enrolled prints. Matching
-is a separate algorithm:
+## 1. Architecture, as actually built
 
 ```
-finger on sensor ──(vendor capture)──▶ raw image ──mindtct──▶ minutiae ──bozorth3──▶ match score
-                                                  (NIST NBIS)          (NIST NBIS)
+Terminal / Fingerprints.tsx (browser)
+   │
+   │  1. capture (DigitalPersona WebSDK → Lite Client, 127.0.0.1:52181)
+   ▼
+src/lib/digitalPersona.ts ──WSQ sample (base64)──┐
+   │                                              │
+   │ enroll: POST /api/v1/students/:id/fingerprint│ identify: POST /api/v1/fingerprint/identify
+   ▼                                              ▼
+Postgres (FingerprintTemplate.template, bytea)   src/server/fingerprintMatch.ts
+                                                   │  compares live scan against every
+                                                   │  enrolled template (nbis-js, WASM)
+                                                   ▼
+                                             { matched, student_id }
 ```
 
-NIST NBIS (public domain, no license cost — the choice made for this project
-for any vendor whose SDK doesn't already do matching) ships two relevant
-command-line tools:
-
-- `mindtct` — extracts a minutiae template from a raw fingerprint image.
-- `bozorth3` — compares two minutiae templates and outputs a match score;
-  run it against every enrolled template to do 1:N identification.
-
-`FingerprintTemplate.template` should store whatever the matching step
-consumes directly — NBIS's `mindtct` output (`.xyt` minutiae, base64/hex
-encoded) if you're on that path, or DigitalPersona's own template format if
-its SDK produces one. Either way, store the matcher's input, not the raw
-image — smaller, and no re-extraction needed at match time.
-
-**Confirmed for DigitalPersona** (§5b): its browser-facing WebSDK is
-capture-only, same as Futronic — no `/identify`-equivalent call exists in
-that client library. This section applies to both vendors.
+**No local bridge process exists or is needed.** Capture talks directly
+from the browser to DigitalPersona's own local agent (the "Digital Persona
+Lite Client"). Matching runs as a normal Next.js API route — on Vercel,
+that's a serverless function, not a service you deploy or manage
+separately. This is simpler than the original plan (§"Futronic" below),
+which assumed matching would always need a local Windows service running
+`mindtct`/`bozorth3` binaries.
 
 ---
 
-## 4. The local companion bridge
+## 2. Capture: DigitalPersona WebSDK
 
-**This section applies to Futronic, and to DigitalPersona only for
-matching** (not capture — see §5b, its capture path talks directly to the
-vendor's own local agent from the browser, no bridge involved). Browsers
-cannot call a native vendor library or run `mindtct`/`bozorth3` directly, so
-whichever vendor's raw capture you end up with, **matching** needs a small
-**local HTTP service** running on the same machine as the scanner:
+Prerequisite (done on the test machine): install **"Digital Persona Lite
+Client"** from `crossmatch.hid.gl/lite-client/`. It's a local background
+service exposing a self-signed HTTPS endpoint at
+`https://127.0.0.1:52181/get_connection` that the browser talks to
+directly via HID's own JS SDK — confirmed by inspecting a public reference
+app (`shanxp/fingerprint-digital-persona-u-are-u-4500-web-example` on
+GitHub — inspected for API shape only, not vendored).
 
-```
-┌ Local bridge (Node, runs on the kiosk machine) ─────────────────────┐
-│ GET  /status              → { connected: boolean }                  │
-│ POST /capture              → runs vendor capture (+ mindtct if       │
-│                               needed), returns a template            │
-│ POST /identify              → capture + match (own NBIS pipeline, or │
-│                               the vendor SDK's own identify call),   │
-│                               returns { studentId, score } or        │
-│                               { matched: false }                    │
-└───────────────────────────────────────────────────────────────────┘
-```
+- `public/vendor/digitalpersona/{fingerprint.sdk.min.js,websdk.client.bundle.min.js}`
+  — HID's own redistributable WebSDK client files (see that directory's
+  `README.md` for provenance).
+- `src/lib/digitalPersona.ts` — lazy-loads the two scripts, exposes
+  `isDigitalPersonaAvailable()` and `captureDigitalPersonaSample()`.
+  Captures in **`Compressed` (WSQ) format**, not PNG — the matcher (§3)
+  only accepts WSQ. WSQ samples arrive double-encoded (base64url wrapping
+  a JSON blob wrapping more base64url); the unwrap sequence
+  (`b64UrlTo64` → `b64UrlToUtf8` → `JSON.parse` → `.Data` → `b64UrlTo64`)
+  is copied verbatim from the reference app's `sampleAcquired()` handler,
+  not guessed.
 
-- **Template cache** (only needed if you're running your own NBIS matching,
-  i.e. not needed if DigitalPersona's SDK matches internally): the bridge
-  periodically fetches all enrolled templates from the server (a new
-  admin/API-key-gated `GET` returning `[{ studentId, finger, template }]` —
-  not built yet, add when the bridge is built) so `/identify` can run 1:N
-  matching locally without a network round-trip per scan.
-- **Where it runs**:
-  - Electron desktop build: in-process inside `electron/main.js` (it already
-    has OS-level access — same pattern as the bundled Postgres/Prisma work),
-    exposed on `127.0.0.1:<port>`; the renderer (this same Next.js UI,
-    unchanged) calls it via `fetch`.
-  - Plain-browser kiosk: a small standalone background service/tray app
-    (same bridge code, no Chromium shell) the browser tab's JS calls the
-    same way — `fetch('http://127.0.0.1:<port>/...')`. If DigitalPersona
-    already ships something like this (§2), this may just be a thin
-    pass-through to their local agent instead of a from-scratch service.
-- **Already wired**: `Terminal.tsx`'s background loop calls
-  `bridgeIdentify()` (→ the bridge's `/identify`), and on a match feeds
-  `reader.submitFingerprintTap(studentId)` — no change needed once a bridge
-  exists. `Fingerprints.tsx`'s enroll button already calls `bridgeCapture()`
-  (→ the bridge's `/capture`) — for higher match quality, have the bridge's
-  `/capture` internally take a couple of samples and pick the best, rather
-  than changing the app-side call. It then POSTs the returned template to
-  the existing `/api/v1/students/:id/fingerprint` endpoint — again, no
-  server-side change needed.
-
----
-
-## 5. Capturing — vendor-specific, not written yet
-
-Not written yet for either vendor — **do this once an SDK is downloaded**,
-since writing FFI bindings against an ABI I haven't seen would be guesswork.
-
-### 5a. Futronic ftrScanAPI
-
-`ftrScanAPI` (Windows/Linux DLL-or-.so + headers, downloaded separately from
-futronic-tech.com — not redistributed here) only captures a raw image; pair
-with §3's NBIS matching. Two realistic implementation approaches, in order
-of recommendation:
-
-1. **Small native helper executable.** Futronic's SDK download includes demo
-   source (C/C++, typically a C# sample too, and a Linux demo). Adapt their
-   demo into a minimal `ftrcapture` binary that opens the device, waits for
-   a finger, captures one frame, writes the raw image to stdout or a temp
-   file, exits. The Node bridge just `spawn()`s this per capture — avoids
-   FFI entirely, keeps ABI-sensitive code in the language the vendor
-   actually supports.
-2. **FFI binding** (`koffi` or `ffi-napi` from Node) directly against the
-   library. More direct, but fragile — you're hand-declaring function
-   signatures and struct layouts from the header, and any mismatch is a
-   silent crash, not a type error. Only worth it if approach 1 proves
-   awkward.
-
-Typical capture flow (verify exact names against your actual `ftrScanAPI.h`
-— from public Futronic samples, subject to SDK version and OS drift):
-`ftrScanOpenDevice()` → `ftrScanIsFingerPresent()` (poll or blocking wait) →
-`ftrScanGetFrame()` / `ftrScanGetImage2()` → `ftrScanCloseDevice()`.
-
-### 5b. DigitalPersona U.are.U 4500 — confirmed, capture is pure client-side JS
-
-Verified by inspecting a public reference app
-(`shanxp/fingerprint-digital-persona-u-are-u-4500-web-example` on GitHub —
-inspected for API shape, not vendored into this repo). Prerequisite,
-already done on the test machine: install **"Digital Persona Lite Client"**
-from `crossmatch.hid.gl/lite-client/`. It runs as a local Windows
-background service exposing a self-signed HTTPS endpoint at
-`https://127.0.0.1:52181/get_connection` — the browser talks to this
-directly. **No custom bridge process is needed for capture at all.**
-
-Add HID's own client SDK as plain `<script>` tags (get them from the
-reference app or HID's own SDK download — not redistributed in this repo):
-`websdk.client.bundle.min.js` (transport/connection handling) and
-`fingerprint.sdk.min.js` (the `Fingerprint` namespace). Confirmed API
-surface from the reference app:
+Confirmed API surface (from the reference app):
 
 ```js
 const sdk = new Fingerprint.WebApi()
-
-sdk.onDeviceConnected = (e) => { /* a reader was plugged in */ }
-sdk.onDeviceDisconnected = (e) => { /* unplugged */ }
+sdk.onSamplesAcquired = (e) => { /* e.samples, see unwrap above */ }
 sdk.onCommunicationFailed = (e) => { /* Lite Client unreachable */ }
-sdk.onQualityReported = (e) => { /* Fingerprint.QualityCode[e.quality] per scan */ }
-sdk.onSamplesAcquired = (s) => {
-  const samples = JSON.parse(s.samples) // array; samples[0] is the capture
-}
-
-const readerIds = await sdk.enumerateDevices()        // string[] of reader UIDs
-const info = await sdk.getDeviceInfo(readerIds[0])     // { DeviceID, eUidType, eDeviceTech, eDeviceModality }
-await sdk.startAcquisition(Fingerprint.SampleFormat.Raw, readerIds[0]) // fires onSamplesAcquired repeatedly
+const readerIds = await sdk.enumerateDevices()
+await sdk.startAcquisition(Fingerprint.SampleFormat.Compressed, readerIds[0])
 await sdk.stopAcquisition()
 ```
 
-`Fingerprint.SampleFormat` has four values: `PngImage`, `Raw`, `Compressed`
-(WSQ), `Intermediate` (DigitalPersona's own extracted feature set — a
-proprietary format, don't use it if pairing with `mindtct`/`bozorth3`). This
-repo's implementation (below) uses `PngImage` — it decodes with a single
-`Fingerprint.b64UrlTo64()` call, unlike `Raw`/`Compressed` which arrive
-double-encoded (JSON-wrapped inside the base64 payload) and weren't worth
-guessing the exact unwrap sequence for without hardware to test against.
+**No identify/match method exists in this client SDK** — it's capture
+-only, which is why matching (§3) is a separate piece.
 
-None of the three (`PngImage`, `Raw`, `Compressed`) are a free ride into
-`mindtct` — it doesn't read PNG natively, so §6's bridge needs to decode PNG
-into a raw/PGM buffer first (trivial with any image library; PNG's header
-conveniently self-describes width/height, unlike `Raw` which needs those
-pulled separately from `getDeviceInfo`). `Compressed` (WSQ) might avoid that
-conversion step entirely — NBIS ships its own WSQ codec, and `mindtct` may
-read `.wsq` directly — but that's not confirmed against real NBIS docs
-here, and the decode path for `Compressed` from this SDK is itself
-unverified (above). Worth revisiting once the matching bridge is actually
-being built and NBIS's real input requirements are in front of whoever's
-writing it.
+**Self-signed cert caveat**: the Lite Client serves HTTPS on `127.0.0.1`
+with a self-signed cert — the browser may need a one-time manual trust step
+(visit `https://127.0.0.1:52181` directly, accept the warning) before
+`fetch` calls succeed silently. Known HID WebSDK rough edge; hasn't been
+re-confirmed against the specific Lite Client version installed.
 
-**No identify/match method exists in this client SDK** — confirmed capture
--only, same limitation as Futronic (§3 applies).
-
-**Implemented in this repo:**
-
-- `public/vendor/digitalpersona/{fingerprint.sdk.min.js,websdk.client.bundle.min.js}`
-  — the vendored WebSDK files (see that directory's `README.md` for
-  provenance).
-- `src/lib/digitalPersona.ts` — lazy-loads the two scripts, exposes
-  `isDigitalPersonaAvailable()` and `captureDigitalPersonaSample()` (starts
-  acquisition, resolves with the first PNG sample, stops acquisition).
-- `src/lib/fingerprintBridge.ts` — `bridgeStatus()`/`bridgeCapture()` try
-  DigitalPersona first, falling back to the generic local HTTP bridge (§4)
-  for other vendors. `bridgeIdentify()` is unchanged — generic bridge only,
-  since DigitalPersona's WebSDK can't identify/match.
-- `src/lib/validation.ts` — `fingerprintEnroll`'s template length cap raised
-  from 20,000 to 2,000,000 chars; a real base64 PNG capture blows past the
-  old limit.
-
-**Not yet done / can't be verified without the physical reader + Lite
-Client**: an actual capture round-trip. The code path is real (no fake
-data), but this environment has no Windows machine or U.are.U 4500 to
-exercise it against — test the Admin → Fingerprints enroll flow on the
-machine with the reader attached.
-
-**Still open**: tap-time auto-identification (`bridgeIdentify`) stays
-"not connected" until the matching bridge (§4/§6) exists — DigitalPersona's
-capture being solved doesn't solve matching, see §3.
-
-**Self-signed cert caveat**: because the Lite Client serves HTTPS on
-`127.0.0.1` with a self-signed cert, the browser will likely need a one-time
-manual trust step (visiting `https://127.0.0.1:52181` directly and accepting
-the certificate warning) before `fetch`/XHR calls to it succeed silently —
-a known rough edge with HID's WebSDK, confirm current behavior against
-whatever Lite Client version you installed.
+**Verification status**: the capture code path is real, not simulated, but
+this environment has no Windows machine or physical U.are.U 4500 — an
+actual capture round-trip has to be tested on the machine with the reader
+attached (Admin → Fingerprints, or the Terminal kiosk's "Enroll
+Fingerprint" button).
 
 ---
 
-## 6. Running `mindtct` / `bozorth3` from the bridge
+## 3. Matching: `nbis-js` (NIST NBIS compiled to WebAssembly)
 
-Only needed if the vendor SDK doesn't do matching itself (confirmed
-necessary for Futronic; check §5b for DigitalPersona). Both are
-command-line tools (part of NBIS, build from source or use a prebuilt
-distribution for your target OS). The bridge shells out to them the same
-way `electron/main.js` shells out to `pg_ctl`/`prisma`:
+`src/server/fingerprintMatch.ts` runs real `mindtct`+`bozorth3` (via the
+`nbis-js` npm package) **server-side**, comparing a live WSQ scan against
+every `FingerprintTemplate` row until it finds a match or exhausts the
+list. Default match threshold is 40 (the package's own default) —
+**unverified against real fingerprints, needs tuning with an actual pilot
+group** once hardware is available.
 
-```
-mindtct raw_capture.pgm out_prefix        # writes out_prefix.xyt (minutiae)
-bozorth3 out_prefix.xyt enrolled_N.xyt    # prints a match score to stdout
-```
+### License — read before shipping this
 
-Run `bozorth3` against every cached enrolled template, keep the highest
-score, and apply a threshold (NBIS's own docs suggest a starting point around
-40, but **tune this against your actual scanner and population** — too low
-gives false accepts, too high gives false rejects).
+`nbis-js` is **AGPL-3.0-or-later**. That's a strong copyleft license with a
+network-use clause: running it inside a hosted web application can obligate
+you to make that application's source available to anyone who uses it over
+the network. This was a deliberate, explicit tradeoff the project owner
+chose to accept in order to get a working matcher quickly — **it has not
+been reviewed by a lawyer**. If TapIn is meant to stay proprietary, get
+that review before this ships to real users. If it turns out to be a
+problem, the fix is swapping `src/server/fingerprintMatch.ts`'s
+implementation for a differently-licensed matcher — the rest of the
+architecture (capture, API route, schema) doesn't need to change.
+
+### The packaging bug (and why it's not actually "browser only")
+
+`nbis-js`'s own README says "at the moment this project only runs in the
+browser." That's wrong, or at least incomplete — it's Emscripten output
+with a real Node.js fallback path built in, but that fallback references a
+bare `__dirname`, which doesn't exist in native ESM (the package is
+`"type": "module"`). Node throws `__dirname is not defined` on import.
+Confirmed by testing directly: polyfilling `globalThis.__dirname` before
+importing makes it load and run correctly in plain Node, *and* inside
+Next.js's own server bundler (verified via `pnpm dev` + a direct request —
+got back an authentic NBIS C decode error on malformed test input, proving
+the real WASM algorithm executed, not a stub). `src/server/
+fingerprintMatch.ts` carries this polyfill; `next.config.ts` also marks
+`nbis-js` as a `serverExternalPackage` so the bundler doesn't transform it
+and disturb its own environment detection.
+
+### Robustness
+
+`checkDuplicateFingerFromBase64` **throws** (rather than returning `false`)
+on malformed WSQ input — confirmed directly. `findMatchingStudent` catches
+per-comparison, so one corrupt enrolled template (or a bad live scan)
+can't take down the whole identify request; it just gets skipped.
+
+### API
+
+`POST /api/v1/fingerprint/identify` — public like `/api/v1/taps` (no admin
+session required; the kiosk calls it directly), scope `taps_write`, body
+`{ image: "<base64 wsq>" }`, response `{ matched: true, student_id }` or
+`{ matched: false }`.
+
+### Performance
+
+O(n) in enrolled-student count — every identify call runs up to n WASM
+comparisons sequentially. Fine at school scale (hundreds of students);
+would need real optimization (indexing, parallelization, or a proper
+biometric search structure) far beyond that.
+
+**Verification status**: confirmed the WASM genuinely executes inside
+Next's server runtime and handles malformed input gracefully. **Not
+verified**: actual match accuracy against real fingerprints — needs real
+hardware and a real pilot group, which this environment doesn't have.
 
 ---
 
-## 7. Rollout checklist
+## 4. Wiring (`src/lib/fingerprintBridge.ts`)
 
-1. Decide Futronic vs. DigitalPersona (or pilot both) — §2.
-2. **DigitalPersona path**: install the Lite Client (already done on the
-   test machine), add the two SDK script tags, refactor
-   `src/lib/fingerprintBridge.ts`'s capture call to use `Fingerprint.WebApi`
-   client-side instead of a server bridge call — §5b. **Futronic path**:
-   build the native capture helper — §5a.
-3. Either path: build/vendor `mindtct` + `bozorth3` for your target OS, and
-   the local matching-only bridge (`/status`, `/identify`, template cache
-   sync from the server) — §3, §4, §6.
-4. Add the server-side template-listing endpoint the bridge syncs from
-   (gated on a read scope, not built yet).
-5. Point the bridge at `NEXT_PUBLIC_FINGERPRINT_BRIDGE_URL` (or just run it
-   on the default `http://127.0.0.1:8787`) for the matching calls — capture
-   calls for DigitalPersona bypass this entirely (§5b).
-6. Tune the `bozorth3` match threshold against a real pilot group before
-   trusting it for attendance.
+- `bridgeStatus()` / `bridgeCapture()`: try DigitalPersona first
+  (`isDigitalPersonaAvailable`/`captureDigitalPersonaSample`); fall back to
+  a generic local HTTP bridge contract (`NEXT_PUBLIC_FINGERPRINT_BRIDGE_URL`,
+  default `http://127.0.0.1:8787`) for any other vendor — nothing listens
+  there today, so that fallback genuinely reports "not connected."
+- `bridgeIdentify()`: captures via DigitalPersona, POSTs to
+  `/api/v1/fingerprint/identify`, returns the matched `student_id` or
+  `null`. Falls back to the generic bridge's `/identify` for other vendors.
+- `src/components/Terminal.tsx` runs a background loop calling
+  `bridgeIdentify()` in a cycle whenever the reader is armed, feeding a
+  match into `reader.submitFingerprintTap(studentId)` — same tap-event
+  pipeline as card taps. **Paused while the enroll modal is open** — both
+  capture from the same physical reader, and two concurrent acquisitions on
+  one device fight each other.
+- `src/components/FingerprintEnroll.tsx` (Terminal's self-service modal)
+  and `src/components/Fingerprints.tsx` (admin) both call `bridgeCapture()`
+  for enrollment — no vendor-specific code in either component.
 
 ---
 
-### Files this touches when you build it
+## 5. Known gaps / not yet done
 
-- A new server-side template-listing endpoint (bridge sync source, only if
-  doing your own matching) — out-of-repo bridge project reads it.
-- `electron/main.js` (if bundling the bridge into the desktop build) — start
-  the bridge's HTTP listener alongside the existing Postgres/Next server
-  startup sequence.
-- Local bridge — **new, out-of-repo** (or a `bridge/` dir): holds the vendor
-  capture integration, matching (NBIS or vendor-native), and the template
-  cache (if applicable).
+- **Match accuracy is unverified.** No real hardware here to test against.
+  Before trusting this for attendance: test with a real pilot group, tune
+  the threshold, check false-accept/false-reject rates.
+- **AGPL license review** — see §3.
+- **Self-serve enrollment has no identity check** (`src/components/
+  FingerprintEnroll.tsx`): anyone at the kiosk can search any student's
+  name and enroll a fingerprint under it, not just their own. Fine for a
+  card (physical possession is the check); weaker for something meant to
+  prove identity. Not fixed — flagging it here so it isn't forgotten.
+- **1:N performance** at real scale — see §3.
+
+---
+
+## Futronic FS80H — secondary path, not built
+
+Kept for reference in case DigitalPersona doesn't work out. Unlike
+DigitalPersona, Futronic's `ftrScanAPI` has **no local browser-facing
+agent** — capture would need either a native helper executable (adapt
+Futronic's own SDK demo source) or FFI bindings (`koffi`/`ffi-napi`)
+against `ftrScanAPI.dll`/`.so`, run from a **local bridge process** you'd
+have to build and deploy to the kiosk machine (unlike DigitalPersona, which
+needed none). That bridge would still call into `src/server/
+fingerprintMatch.ts`'s matching logic the same way, or run NBIS locally if
+avoiding the network round-trip matters more than avoiding a local service.
+Typical capture flow, unverified against a real header:
+`ftrScanOpenDevice()` → `ftrScanIsFingerPresent()` → `ftrScanGetFrame()`/
+`ftrScanGetImage2()` → `ftrScanCloseDevice()`. Nothing in this repo
+implements this — no device or SDK has been available to verify against.

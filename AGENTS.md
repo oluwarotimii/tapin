@@ -32,9 +32,11 @@ This is the canonical project structure. Start with task-relevant files below. O
 - `src/components/` - Client UI components (Terminal, admin views, Login/Setup, ApiKeys)
 - `src/store.ts` - Client-side data cache mirroring the old sync `db.*` API; optimistic mutations backed by the API
 - `src/reader.ts` - Client reader seam: real HID card taps (`submitCardTap`) and fingerprint-bridge-resolved taps (`submitFingerprintTap`), both posting to `POST /api/v1/taps`
-- `src/lib/fingerprintBridge.ts` - Real HTTP client for the local fingerprint companion bridge (`docs/fingerprint-integration.md`); no bridge is deployed yet so calls genuinely report "not connected" until one exists
+- `src/lib/digitalPersona.ts` - Real client for HID DigitalPersona's WebSDK (talks to the locally-installed "Digital Persona Lite Client" agent, `127.0.0.1:52181`) — captures a WSQ fingerprint sample directly from the browser, no server involved
+- `src/lib/fingerprintBridge.ts` - Tries DigitalPersona (above) first for capture/status, falls back to a generic local HTTP bridge contract for other vendors (nothing listens there yet, so that fallback genuinely reports "not connected"); `bridgeIdentify()` POSTs a live scan to `/api/v1/fingerprint/identify` for matching
+- `src/server/fingerprintMatch.ts` - Server-side 1:N fingerprint matching via `nbis-js` (NIST NBIS mindtct+bozorth3 compiled to WASM, **AGPL-3.0** — see `docs/fingerprint-integration.md` §3 for the license tradeoff and an ESM packaging workaround it needs)
 - `src/lib/` - Shared types, API fetch helpers, session auth (`session.ts`), API key crypto (`apiKey.ts`), validation, CSV parser
-- `src/server/` - Server-only domain logic: `domain.ts` (tap rules), `students.ts`, `attendance.ts`, `guard.ts` (auth/scopes)
+- `src/server/` - Server-only domain logic: `domain.ts` (tap rules), `students.ts`, `attendance.ts`, `guard.ts` (auth/scopes), `fingerprintMatch.ts` (above)
 - `prisma/schema.prisma` - Data model: `User`, `ApiKey`, `Student`, `ScheduleDay`, `AttendanceRecord`, `ActiveSession`
 - `package.json` - Scripts (dev/build/db:migrate/db:seed) and dependencies
 
@@ -45,6 +47,7 @@ This is the canonical project structure. Start with task-relevant files below. O
 - Styling: Tailwind CSS v4 via `@tailwindcss/postcss` (`src/app/globals.css`)
 - Auth: custom jose JWT sessions (httpOnly cookie) + bcryptjs password hashes
 - Validation: zod; Formatting: prettier
+- Fingerprint matching: `nbis-js` (WASM, AGPL-3.0 — see `docs/fingerprint-integration.md`), marked as a `serverExternalPackages` entry in `next.config.ts`
 
 ## API key auth
 

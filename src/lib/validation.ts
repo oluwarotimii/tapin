@@ -41,9 +41,13 @@ export const tapRequest = z
 
 export const fingerprintEnroll = z.object({
   finger: z.string().min(1).max(40),
-  // Base64 PNG captures from DigitalPersona's WebSDK run well past the old
+  // Base64 WSQ captures from DigitalPersona's WebSDK run well past the old
   // 20,000-char cap (a real scan can be tens of KB before base64 overhead).
   template: z.string().min(1).max(2_000_000),
+})
+
+export const fingerprintIdentify = z.object({
+  image: z.string().min(1).max(2_000_000),
 })
 
 export const fingerprintRemove = z.object({
