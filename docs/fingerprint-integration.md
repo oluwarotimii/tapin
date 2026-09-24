@@ -1,8 +1,10 @@
 # Wiring up a real fingerprint scanner (Futronic FS80H or DigitalPersona U.are.U 4500)
 
 Design note for connecting a real fingerprint scanner. Two vendors are under
-evaluation — **Futronic FS80H** and **HID DigitalPersona U.are.U 4500** —
-neither device nor SDK is in hand yet for either. Everything in the web app
+evaluation — **Futronic FS80H** (no device/SDK yet) and **HID DigitalPersona
+U.are.U 4500** (device in hand, "Digital Persona Lite Client" local agent
+already installed — see §5b for its confirmed API, verified against a public
+reference app). Everything in the web app
 (schema, API, admin UI, Terminal kiosk, and the bridge HTTP client) is
 already built and wired against this flow regardless of which vendor you end
 up with — nothing here is simulated or faked. What's missing is the **bridge
@@ -49,12 +51,14 @@ None of §1's list changes based on which scanner you pick; only §5/§6 differ.
 | Capture SDK | `ftrScanAPI` — Windows/Linux/Mac/Android, raw image only | HID's "One Touch"/U.are.U SDK — Windows-first |
 | Matching | **Not included.** Bring your own (§3) | **Likely included** — their SDK has historically bundled feature extraction + 1:N matching, meaning you may not need §3/§6 at all. Unverified for whatever SDK version you actually get — confirm against their current docs. |
 | Linux support | Official — vendor ships a Linux driver + `ftrScanAPI` demo | Not official from HID. Community support exists via `libfprint`/`fprintd` (the open-source Linux fingerprint stack used for OS login) for several U.are.U models, but that's a different, lower-level code path than HID's own proprietary matching SDK — you'd be doing capture-only via libfprint and still need your own matcher (§3), same as the Futronic path. |
-| Browser-facing local agent | Not that's documented — you build the bridge yourself (§4) | HID has historically shipped a local Windows service that a web page talks to over `localhost`, similar in spirit to §4's bridge — may reduce how much of the bridge you need to build custom. Confirm against the current SDK; naming/ports have changed across HID product revisions. |
+| Browser-facing local agent | Not that's documented — you build the bridge yourself (§4) | **Confirmed** — "Digital Persona Lite Client" (`crossmatch.hid.gl/lite-client/`), a local HTTPS service at `127.0.0.1:52181`. The browser talks to it directly via HID's own JS SDK — no custom bridge needed for capture at all. See §5b. |
 
-Net effect: if DigitalPersona's bundled matching + local-agent pattern holds
-for the SDK you actually download, it's meaningfully less custom code than
-the Futronic path (skip §3's NBIS pipeline, and possibly most of §4's
-bridge). Until someone has the actual SDK in hand, treat both as open.
+Net effect, now confirmed for DigitalPersona (verified against a real public
+example app, not just docs — see §5b): capture is **meaningfully simpler**
+than Futronic — no native binary/FFI, just a `<script>` tag and a JS API
+called from React. Matching is **not** bundled in this client SDK though
+(§5b), so §3/§6's NBIS pipeline is still needed either way — that part of
+the "less custom code" hope didn't pan out.
 
 ---
 
@@ -84,20 +88,20 @@ encoded) if you're on that path, or DigitalPersona's own template format if
 its SDK produces one. Either way, store the matcher's input, not the raw
 image — smaller, and no re-extraction needed at match time.
 
-If DigitalPersona's SDK does matching itself, skip this section for that
-path entirely — its `/identify`-equivalent call does the 1:N search and you
-never touch NBIS.
+**Confirmed for DigitalPersona** (§5b): its browser-facing WebSDK is
+capture-only, same as Futronic — no `/identify`-equivalent call exists in
+that client library. This section applies to both vendors.
 
 ---
 
-## 4. The local companion bridge (required either way)
+## 4. The local companion bridge
 
-Browsers cannot call a native vendor library directly, regardless of vendor
-or OS. Whether TapIn is accessed through the Electron desktop build (see
-`electron/main.js` and `AGENTS.md`'s "Windows desktop build" section) or
-through a plain browser tab pointed at a hosted kiosk, fingerprint capture
-needs a small **local HTTP service** running on the same machine as the
-scanner:
+**This section applies to Futronic, and to DigitalPersona only for
+matching** (not capture — see §5b, its capture path talks directly to the
+vendor's own local agent from the browser, no bridge involved). Browsers
+cannot call a native vendor library or run `mindtct`/`bozorth3` directly, so
+whichever vendor's raw capture you end up with, **matching** needs a small
+**local HTTP service** running on the same machine as the scanner:
 
 ```
 ┌ Local bridge (Node, runs on the kiosk machine) ─────────────────────┐
@@ -169,29 +173,72 @@ Typical capture flow (verify exact names against your actual `ftrScanAPI.h`
 `ftrScanOpenDevice()` → `ftrScanIsFingerPresent()` (poll or blocking wait) →
 `ftrScanGetFrame()` / `ftrScanGetImage2()` → `ftrScanCloseDevice()`.
 
-### 5b. DigitalPersona U.are.U 4500
+### 5b. DigitalPersona U.are.U 4500 — confirmed, capture is pure client-side JS
 
-Not written — no SDK downloaded yet. What to check first, per §2's open
-questions:
+Verified by inspecting a public reference app
+(`shanxp/fingerprint-digital-persona-u-are-u-4500-web-example` on GitHub —
+inspected for API shape, not vendored into this repo). Prerequisite,
+already done on the test machine: install **"Digital Persona Lite Client"**
+from `crossmatch.hid.gl/lite-client/`. It runs as a local Windows
+background service exposing a self-signed HTTPS endpoint at
+`https://127.0.0.1:52181/get_connection` — the browser talks to this
+directly. **No custom bridge process is needed for capture at all.**
 
-1. Does the SDK version you download include feature extraction + matching
-   (`DPFPEngine`-style API in older "One Touch" SDKs), or capture only? This
-   determines whether §3/§6 apply at all for this path.
-2. Does it ship a local browser-facing agent/service already? If so, the
-   bridge in §4 may just be a thin wrapper calling that agent's existing
-   HTTP/WebSocket API instead of a from-scratch native integration —
-   confirm its actual port/endpoints from the SDK docs, they're not
-   guessable.
-3. If it's SDK-only (no local agent) and Windows-native, the same two
-   implementation approaches as §5a apply (native helper vs. FFI) — swap in
-   whatever the DigitalPersona SDK's capture/identify function names are
-   once you have its headers.
+Add HID's own client SDK as plain `<script>` tags (get them from the
+reference app or HID's own SDK download — not redistributed in this repo):
+`websdk.client.bundle.min.js` (transport/connection handling) and
+`fingerprint.sdk.min.js` (the `Fingerprint` namespace). Confirmed API
+surface from the reference app:
 
-**Action item before writing either §5a or §5b for real:** get the actual
-SDK for whichever device is in hand, and pull the exact function signatures
-/ HTTP contract from its own documentation — don't trust the paragraphs
-above as gospel, they're based on general knowledge of each product line,
-not the specific SDK build you'll ship.
+```js
+const sdk = new Fingerprint.WebApi()
+
+sdk.onDeviceConnected = (e) => { /* a reader was plugged in */ }
+sdk.onDeviceDisconnected = (e) => { /* unplugged */ }
+sdk.onCommunicationFailed = (e) => { /* Lite Client unreachable */ }
+sdk.onQualityReported = (e) => { /* Fingerprint.QualityCode[e.quality] per scan */ }
+sdk.onSamplesAcquired = (s) => {
+  const samples = JSON.parse(s.samples) // array; samples[0] is the capture
+}
+
+const readerIds = await sdk.enumerateDevices()        // string[] of reader UIDs
+const info = await sdk.getDeviceInfo(readerIds[0])     // { DeviceID, eUidType, eDeviceTech, eDeviceModality }
+await sdk.startAcquisition(Fingerprint.SampleFormat.Raw, readerIds[0]) // fires onSamplesAcquired repeatedly
+await sdk.stopAcquisition()
+```
+
+`Fingerprint.SampleFormat` has four values: `PngImage`, `Raw`, `Compressed`
+(WSQ), `Intermediate` (DigitalPersona's own extracted feature set — **not**
+NBIS-compatible, don't use it if pairing with `mindtct`/`bozorth3`; use
+`Raw` or `PngImage` instead so §3/§6's NBIS pipeline can consume it directly
+without needing to understand DigitalPersona's proprietary format). For
+non-`PngImage` formats, sample data arrives double-encoded — decode with the
+SDK's own `Fingerprint.b64UrlTo64()` then `Fingerprint.b64UrlToUtf8()`
+helpers before you get the actual base64 payload (see the reference app's
+`sampleAcquired()` for the exact unwrap sequence).
+
+**No identify/match method exists in this client SDK** — confirmed capture
+-only, same limitation as Futronic (§3 applies).
+
+**Practical integration point in this repo**: since capture is pure
+browser JS talking to a device already running locally, it plugs in at a
+different layer than §4's Node bridge. `src/lib/fingerprintBridge.ts`
+currently assumes *all* of `/status`/`/capture`/`/identify` are server-side
+bridge calls — for DigitalPersona, `/capture`'s implementation would
+instead call `Fingerprint.WebApi` directly in the browser (in
+`Fingerprints.tsx`/`Terminal.tsx`), then POST the raw sample to a small
+local matching-only service (§4) for `/identify`, or straight to
+`/api/v1/students/:id/fingerprint` for enroll. This is a real, small
+refactor of `fingerprintBridge.ts` to make when you're ready to wire this
+up for real — not done yet, since it changes call sites in three files and
+is worth doing deliberately rather than as a drive-by.
+
+**Self-signed cert caveat**: because the Lite Client serves HTTPS on
+`127.0.0.1` with a self-signed cert, the browser will likely need a one-time
+manual trust step (visiting `https://127.0.0.1:52181` directly and accepting
+the certificate warning) before `fetch`/XHR calls to it succeed silently —
+a known rough edge with HID's WebSDK, confirm current behavior against
+whatever Lite Client version you installed.
 
 ---
 
@@ -218,24 +265,21 @@ gives false accepts, too high gives false rejects).
 ## 7. Rollout checklist
 
 1. Decide Futronic vs. DigitalPersona (or pilot both) — §2.
-2. Confirm the SDK download and exact capture (and matching, if bundled)
-   function/API set for whichever device and driver version you're
-   shipping. — §5
-3. Build the capture helper (native binary, FFI, or a thin wrapper over a
-   vendor-provided local agent) and confirm it can pull a raw scan reliably
-   before writing any bridge code.
-4. If the vendor SDK doesn't match internally: build/vendor `mindtct` +
-   `bozorth3` for your target OS. — §6
-5. Build (or thinly wrap) the local bridge (`/status`, `/capture`,
-   `/identify`, template cache sync from the server if doing your own
-   matching). — §4
-6. Add the server-side template-listing endpoint the bridge syncs from, if
-   doing your own matching (gated on a read scope, not built yet).
-7. Point the bridge at `NEXT_PUBLIC_FINGERPRINT_BRIDGE_URL` (or just run it
-   on the default `http://127.0.0.1:8787`) — the app side needs no changes.
-8. Tune the match threshold (yours, if using NBIS, or the vendor SDK's own
-   confidence setting) against a real pilot group before trusting it for
-   attendance.
+2. **DigitalPersona path**: install the Lite Client (already done on the
+   test machine), add the two SDK script tags, refactor
+   `src/lib/fingerprintBridge.ts`'s capture call to use `Fingerprint.WebApi`
+   client-side instead of a server bridge call — §5b. **Futronic path**:
+   build the native capture helper — §5a.
+3. Either path: build/vendor `mindtct` + `bozorth3` for your target OS, and
+   the local matching-only bridge (`/status`, `/identify`, template cache
+   sync from the server) — §3, §4, §6.
+4. Add the server-side template-listing endpoint the bridge syncs from
+   (gated on a read scope, not built yet).
+5. Point the bridge at `NEXT_PUBLIC_FINGERPRINT_BRIDGE_URL` (or just run it
+   on the default `http://127.0.0.1:8787`) for the matching calls — capture
+   calls for DigitalPersona bypass this entirely (§5b).
+6. Tune the `bozorth3` match threshold against a real pilot group before
+   trusting it for attendance.
 
 ---
 
