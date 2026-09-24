@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { db, type TapResult } from "../store";
 import { reader, type TapEvent } from "../reader";
-import { useReaderStatus } from "../hooks";
+import { useReaderStatus, useFingerprintBridgeConnected } from "../hooks";
 import { useHidCapture } from "../useHidCapture";
 import { bridgeIdentify } from "../lib/fingerprintBridge";
 import { tapTag, hexA } from "../tapFormat";
+import FingerprintEnroll from "./FingerprintEnroll";
 
 const CLEAR_DELAY = 2800; // ms before status resets to idle
 
@@ -23,8 +24,10 @@ export default function Terminal() {
   const [tapKey, setTapKey] = useState(0);
   const [events, setEvents] = useState<TapEvent[]>([]);
   const [scanning, setScanning] = useState(false);
+  const [showEnroll, setShowEnroll] = useState(false);
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const readerStatus = useReaderStatus();
+  const fingerprintBridgeConnected = useFingerprintBridgeConnected();
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -267,6 +270,19 @@ export default function Terminal() {
           <span className="mono text-xs" style={{ color: "#56627a" }}>
             {dateDisplay}
           </span>
+          {fingerprintBridgeConnected && (
+            <button
+              onClick={() => setShowEnroll(true)}
+              className="mono text-xs px-3 py-1 rounded-full transition-all"
+              style={{
+                background: "rgba(0,229,160,0.08)",
+                color: "#00e5a0",
+                border: "1px solid rgba(0,229,160,0.2)",
+              }}
+            >
+              Enroll Fingerprint
+            </button>
+          )}
         </div>
       </div>
 
@@ -586,6 +602,8 @@ export default function Terminal() {
           </div>
         </div>
       </div>
+
+      {showEnroll && <FingerprintEnroll onClose={() => setShowEnroll(false)} />}
     </div>
   );
 }
