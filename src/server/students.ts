@@ -75,6 +75,7 @@ export async function readCard(cardId: string) {
 // ── fingerprints ────────────────────────────────────────────────────────────
 // `id` here is the internal Student.id, matching the other students/[id]/*
 // nested routes (schedule, etc.) — not the external studentId cardWrite uses.
+// One fingerprint per student: enrolling again replaces whatever was there.
 export async function enrollFingerprint(
   id: string,
   finger: string,
@@ -84,16 +85,17 @@ export async function enrollFingerprint(
   if (!student) return false
   // template arrives as base64 (JSON can't carry raw binary) — store the
   // decoded bytes (bytea) rather than the base64 text, ~25% smaller.
-  await prisma.fingerprintTemplate.create({
-    data: { studentId: id, finger, template: Buffer.from(template, "base64") },
+  const bytes = Buffer.from(template, "base64")
+  await prisma.fingerprintTemplate.upsert({
+    where: { studentId: id },
+    create: { studentId: id, finger, template: bytes },
+    update: { finger, template: bytes },
   })
   return true
 }
 
-export async function removeFingerprint(id: string, finger?: string) {
-  await prisma.fingerprintTemplate.deleteMany({
-    where: { studentId: id, ...(finger ? { finger } : {}) },
-  })
+export async function removeFingerprint(id: string) {
+  await prisma.fingerprintTemplate.deleteMany({ where: { studentId: id } })
   return true
 }
 

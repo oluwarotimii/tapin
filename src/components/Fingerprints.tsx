@@ -63,12 +63,12 @@ export default function Fingerprints() {
           : { kind: "error", message: "Enroll failed" },
       )
     } else {
-      await db.removeFingerprint(target.id, finger)
+      await db.removeFingerprint(target.id)
       setScanning(false)
       setResult({
         kind: "success",
         message: "Fingerprint removed",
-        detail: `${finger} · ${target.name} (${target.studentId})`,
+        detail: `${target.name} (${target.studentId})`,
       })
     }
   }
@@ -153,7 +153,7 @@ export default function Fingerprints() {
             {students.map((s) => (
               <option key={s.id} value={s.studentId}>
                 {s.name} · {s.studentId}
-                {s.fingerprintCount ? ` (${s.fingerprintCount} enrolled)` : ""}
+                {s.fingerprintCount ? " (already enrolled)" : ""}
               </option>
             ))}
           </select>
@@ -282,7 +282,7 @@ export default function Fingerprints() {
                   className="text-left px-4 py-2 text-xs font-mono"
                   style={{ color: "#2e3a4e" }}
                 >
-                  Enrolled prints
+                  Status
                 </th>
               </tr>
             </thead>
@@ -306,7 +306,7 @@ export default function Fingerprints() {
                     className="px-4 py-2.5 text-xs font-mono"
                     style={{ color: "#00e5a0" }}
                   >
-                    {s.fingerprintCount}
+                    enrolled
                   </td>
                 </tr>
               ))}

@@ -10,6 +10,7 @@ import { tapTag, hexA } from "../tapFormat";
 import FingerprintEnroll from "./FingerprintEnroll";
 
 const CLEAR_DELAY = 2800; // ms before status resets to idle
+const FINGERPRINT_WINDOW_SECONDS = 30; // how long the scanner stays awake per press
 
 const READER_STATUS: Record<string, { label: string; color: string }> = {
   disconnected: { label: "OFFLINE", color: "#ff4d6a" },
@@ -25,6 +26,8 @@ export default function Terminal() {
   const [events, setEvents] = useState<TapEvent[]>([]);
   const [scanning, setScanning] = useState(false);
   const [showEnroll, setShowEnroll] = useState(false);
+  const [fingerprintScanActive, setFingerprintScanActive] = useState(false);
+  const [fingerprintSecondsLeft, setFingerprintSecondsLeft] = useState(0);
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const readerStatus = useReaderStatus();
   const fingerprintBridgeConnected = useFingerprintBridgeConnected();
@@ -51,14 +54,37 @@ export default function Terminal() {
     onCard: (cardId) => performTap(cardId),
   });
 
-  // Background loop against the fingerprint bridge (docs/fingerprint-
-  // integration.md). Blocks on bridgeIdentify() until a match or timeout,
-  // then feeds the result into the same tap-event stream as card taps.
-  // Paused while the enroll modal is open — both capture from the same
-  // physical reader, and two concurrent acquisitions on one device fight
-  // each other.
-  useEffect(() => {
+  // On-demand only — the scanner does not sit listening indefinitely.
+  // Pressing the fingerprint button arms it for FINGERPRINT_WINDOW_SECONDS,
+  // then it auto-disarms. Paused while the enroll modal is open — both
+  // capture from the same physical reader, and two concurrent acquisitions
+  // on one device fight each other.
+  const activateFingerprintScan = useCallback(() => {
     if (readerStatus !== "connected" || showEnroll) return;
+    setFingerprintScanActive(true);
+    setFingerprintSecondsLeft(FINGERPRINT_WINDOW_SECONDS);
+  }, [readerStatus, showEnroll]);
+
+  useEffect(() => {
+    if (!fingerprintScanActive) return;
+    const t = setInterval(() => {
+      setFingerprintSecondsLeft((s) => {
+        if (s <= 1) {
+          setFingerprintScanActive(false);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [fingerprintScanActive]);
+
+  // Background loop against the fingerprint bridge (docs/fingerprint-
+  // integration.md), only while armed. Blocks on bridgeIdentify() until a
+  // match or timeout, then feeds the result into the same tap-event stream
+  // as card taps.
+  useEffect(() => {
+    if (readerStatus !== "connected" || showEnroll || !fingerprintScanActive) return;
     let cancelled = false;
     (async () => {
       while (!cancelled) {
@@ -74,7 +100,7 @@ export default function Terminal() {
     return () => {
       cancelled = true;
     };
-  }, [readerStatus, showEnroll]);
+  }, [readerStatus, showEnroll, fingerprintScanActive]);
 
   useEffect(() => {
     return reader.subscribeTaps((ev) => {
@@ -274,13 +300,33 @@ export default function Terminal() {
           {fingerprintBridgeConnected && (
             <button
               onClick={() => setShowEnroll(true)}
-              className="mono text-xs px-3 py-1 rounded-full transition-all"
+              className="hidden sm:flex items-center gap-1.5 mono text-xs px-3 py-1 rounded-full transition-all"
               style={{
                 background: "rgba(0,229,160,0.08)",
                 color: "#00e5a0",
                 border: "1px solid rgba(0,229,160,0.2)",
               }}
             >
+              <svg width="12" height="12" viewBox="0 0 18 18" fill="none">
+                <path
+                  d="M9 2.5a6 6 0 0 1 6 6v1.5"
+                  stroke="#00e5a0"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M9 6.5a1.5 1.5 0 0 1 1.5 1.5v2.5a3 3 0 0 1-3 3"
+                  stroke="#00e5a0"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M5.2 5.8A4 4 0 0 0 5 8.5v2a5 5 0 0 0 1.2 3.2"
+                  stroke="#00e5a0"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
               Enroll Fingerprint
             </button>
           )}
@@ -477,6 +523,71 @@ export default function Terminal() {
             )}
           </div>
 
+          {/* fingerprint scan trigger — on-demand only, armed for
+              FINGERPRINT_WINDOW_SECONDS per press so the scanner isn't
+              listening indefinitely */}
+          {fingerprintBridgeConnected && (
+            <button
+              onClick={activateFingerprintScan}
+              disabled={fingerprintScanActive}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full transition-all"
+              style={{
+                background: fingerprintScanActive
+                  ? "rgba(0,229,160,0.14)"
+                  : "rgba(0,229,160,0.06)",
+                border: `1px solid ${
+                  fingerprintScanActive
+                    ? "rgba(0,229,160,0.5)"
+                    : "rgba(0,229,160,0.25)"
+                }`,
+                cursor: fingerprintScanActive ? "default" : "pointer",
+              }}
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 18 18"
+                fill="none"
+                className={fingerprintScanActive ? "animate-pulse" : undefined}
+              >
+                <path
+                  d="M9 2.5a6 6 0 0 1 6 6v1.5"
+                  stroke="#00e5a0"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M9 4.5a4 4 0 0 1 4 4v2"
+                  stroke="#00e5a0"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M3 9a6 6 0 0 1 2.5-4.9"
+                  stroke="#00e5a0"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M9 6.5a1.5 1.5 0 0 1 1.5 1.5v2.5a3 3 0 0 1-3 3"
+                  stroke="#00e5a0"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M5.2 5.8A4 4 0 0 0 5 8.5v2a5 5 0 0 0 1.2 3.2"
+                  stroke="#00e5a0"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span className="mono text-sm" style={{ color: "#00e5a0" }}>
+                {fingerprintScanActive
+                  ? `Scanning… ${fingerprintSecondsLeft}s`
+                  : "Scan Fingerprint"}
+              </span>
+            </button>
+          )}
         </div>
 
         {/* ── right panel ── */}

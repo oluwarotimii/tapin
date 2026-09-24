@@ -50,10 +50,6 @@ export const fingerprintIdentify = z.object({
   image: z.string().min(1).max(2_000_000),
 })
 
-export const fingerprintRemove = z.object({
-  finger: z.string().min(1).max(40).optional(),
-})
-
 export const attendancePush = z.object({
   student_id: z.string().min(1),
   date: z.string().regex(datePattern),

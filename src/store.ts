@@ -266,7 +266,7 @@ export const db = {
     bump()
   },
 
-  // ── fingerprints ─────────────────────────────────────────────────────────
+  // ── fingerprints (one per student — enrolling again replaces it) ───────────
   async enrollFingerprint(id: string, finger: string, template: string) {
     const res = await api<{ ok: boolean }>(`/api/v1/students/${id}/fingerprint`, {
       method: "POST",
@@ -274,17 +274,16 @@ export const db = {
     })
     if (res.ok) {
       const target = _c.students.find((s) => s.id === id)
-      if (target) target.fingerprintCount = (target.fingerprintCount ?? 0) + 1
+      if (target) target.fingerprintCount = 1
       bump()
     }
     return res.ok
   },
 
-  async removeFingerprint(id: string, finger?: string) {
-    await api<{ ok: boolean }>(
-      `/api/v1/students/${id}/fingerprint${finger ? `?finger=${encodeURIComponent(finger)}` : ""}`,
-      { method: "DELETE" },
-    )
+  async removeFingerprint(id: string) {
+    await api<{ ok: boolean }>(`/api/v1/students/${id}/fingerprint`, {
+      method: "DELETE",
+    })
     await loadAll()
   },
 

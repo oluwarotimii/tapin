@@ -54,18 +54,18 @@ model Student {
   schedule  ScheduleDay[]
   attendance AttendanceRecord[]
   session   ActiveSession?
-  fingerprintTemplates FingerprintTemplate[]
+  fingerprintTemplate FingerprintTemplate?
 }
 
+// One enrolled fingerprint per student — enrolling again replaces it
+// (src/server/students.ts's enrollFingerprint upserts on studentId).
 model FingerprintTemplate {
   id        String   @id @default(cuid())
-  studentId String
+  studentId String   @unique
   student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   finger    String
   template  Bytes
   createdAt DateTime @default(now())
-
-  @@index([studentId])
 }
 
 model ScheduleDay {

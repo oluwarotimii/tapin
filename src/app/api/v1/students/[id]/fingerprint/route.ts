@@ -1,6 +1,6 @@
 import { authorizeRequest, authFailResponse } from "@/server/guard"
 import { enrollFingerprint, removeFingerprint } from "@/server/students"
-import { fingerprintEnroll, fingerprintRemove } from "@/lib/validation"
+import { fingerprintEnroll } from "@/lib/validation"
 
 export async function POST(
   req: Request,
@@ -24,12 +24,6 @@ export async function DELETE(
   const auth = await authorizeRequest(req, ["fingerprints_write"])
   if (!auth.ok) return authFailResponse(auth)
   const { id } = await ctx.params
-  const url = new URL(req.url)
-  const parsed = fingerprintRemove.safeParse({
-    finger: url.searchParams.get("finger") ?? undefined,
-  })
-  if (!parsed.success)
-    return Response.json({ error: "invalid input" }, { status: 400 })
-  await removeFingerprint(id, parsed.data.finger)
+  await removeFingerprint(id)
   return Response.json({ ok: true })
 }
