@@ -82,8 +82,10 @@ export async function enrollFingerprint(
 ) {
   const student = await prisma.student.findUnique({ where: { id } })
   if (!student) return false
+  // template arrives as base64 (JSON can't carry raw binary) — store the
+  // decoded bytes (bytea) rather than the base64 text, ~25% smaller.
   await prisma.fingerprintTemplate.create({
-    data: { studentId: id, finger, template },
+    data: { studentId: id, finger, template: Buffer.from(template, "base64") },
   })
   return true
 }

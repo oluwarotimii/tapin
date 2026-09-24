@@ -62,7 +62,7 @@ model FingerprintTemplate {
   studentId String
   student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   finger    String
-  template  String
+  template  Bytes
   createdAt DateTime @default(now())
 
   @@index([studentId])
