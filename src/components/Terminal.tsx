@@ -1,10 +1,11 @@
-"use client"
+"use client";
 
-import { useState, useEffect, useCallback, useRef } from "react"
-import { db, type TapResult } from "../store"
-import { reader, type TapEvent } from "../reader"
-import { useReaderStatus } from "../hooks"
-import { tapTag, hexA } from "../tapFormat"
+import { useState, useEffect, useCallback, useRef } from "react";
+import { db, type TapResult } from "../store";
+import { reader, type TapEvent } from "../reader";
+import { useReaderStatus } from "../hooks";
+import { useHidCapture } from "../useHidCapture";
+import { tapTag, hexA } from "../tapFormat";
 
 // Demo cards that cycle through real students + one unknown
 const DEMO_CARDS = [
@@ -14,49 +15,68 @@ const DEMO_CARDS = [
   "CARD-A1B2",
   "CARD-XXXX",
   "CARD-C3D4",
-]
-const CLEAR_DELAY = 2800 // ms before status resets to idle
+];
+const CLEAR_DELAY = 2800; // ms before status resets to idle
 
 const READER_STATUS: Record<string, { label: string; color: string }> = {
   disconnected: { label: "OFFLINE", color: "#ff4d6a" },
   connecting: { label: "CONNECTING", color: "#ffb03a" },
   connected: { label: "ONLINE", color: "#00e5a0" },
   error: { label: "ERROR", color: "#ff4d6a" },
-}
+};
 
 export default function Terminal() {
-  const [now, setNow] = useState(new Date())
-  const [lastTap, setLastTap] = useState<TapResult | null>(null)
-  const [tapKey, setTapKey] = useState(0)
-  const [events, setEvents] = useState<TapEvent[]>([])
-  const [scanning, setScanning] = useState(false)
-  const [demoIdx, setDemoIdx] = useState(0)
-  const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const readerStatus = useReaderStatus()
+  const [now, setNow] = useState(new Date());
+  const [lastTap, setLastTap] = useState<TapResult | null>(null);
+  const [tapKey, setTapKey] = useState(0);
+  const [events, setEvents] = useState<TapEvent[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [demoIdx, setDemoIdx] = useState(0);
+  const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const readerStatus = useReaderStatus();
 
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000)
-    return () => clearInterval(t)
-  }, [])
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Process a card read coming from either the physical HID dongle or the
+  // demo button. The card detail is kept hidden — only the outcome is shown.
+  const performTap = useCallback(
+    (cardId: string) => {
+      if (scanning || readerStatus !== "connected") return;
+      setScanning(true);
+      setTimeout(() => {
+        reader.simulateTap(cardId);
+        setScanning(false);
+      }, 180);
+    },
+    [scanning, readerStatus],
+  );
+
+  const { inputRef, handleKeyDown } = useHidCapture({
+    enabled: readerStatus === "connected",
+    onCard: (cardId) => performTap(cardId),
+  });
 
   useEffect(() => {
     return reader.subscribeTaps((ev) => {
-      setLastTap(ev.result)
-      setTapKey((k) => k + 1)
-      setEvents((prev) => [ev, ...prev].slice(0, 50))
-      if (clearTimer.current) clearTimeout(clearTimer.current)
-      clearTimer.current = setTimeout(() => setLastTap(null), CLEAR_DELAY)
-    })
-  }, [])
+      setLastTap(ev.result);
+      setTapKey((k) => k + 1);
+      setEvents((prev) => [ev, ...prev].slice(0, 50));
+      if (clearTimer.current) clearTimeout(clearTimer.current);
+      clearTimer.current = setTimeout(() => setLastTap(null), CLEAR_DELAY);
+    });
+  }, []);
 
-  const pad = (n: number) => String(n).padStart(2, "0")
-  const timeDisplay = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const timeDisplay = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
   const dateDisplay = now.toLocaleDateString("en-PH", {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
-  })
+  });
 
   const todaySchedule = (() => {
     const days = [
@@ -67,27 +87,23 @@ export default function Terminal() {
       "thursday",
       "friday",
       "saturday",
-    ]
-    return db.getSchedule().find((s) => s.day === days[now.getDay()])
-  })()
+    ];
+    return db.getSchedule().find((s) => s.day === days[now.getDay()]);
+  })();
 
   const handleDemoTap = useCallback(() => {
-    if (scanning || readerStatus !== "connected") return
-    setScanning(true)
-    const card = DEMO_CARDS[demoIdx % DEMO_CARDS.length]
-    setDemoIdx((i) => i + 1)
-    setTimeout(() => {
-      reader.simulateTap(card)
-      setScanning(false)
-    }, 180)
-  }, [scanning, readerStatus, demoIdx])
+    if (scanning || readerStatus !== "connected") return;
+    const card = DEMO_CARDS[demoIdx % DEMO_CARDS.length];
+    setDemoIdx((i) => i + 1);
+    performTap(card);
+  }, [scanning, readerStatus, demoIdx, performTap]);
 
-  const rs = READER_STATUS[readerStatus] ?? READER_STATUS.disconnected
-  const tag = lastTap ? tapTag(lastTap) : null
-  const statusColor = tag ? tag.color : "#2e3540"
-  const statusBg = tag ? hexA(tag.color, 0.08) : "rgba(46,53,64,0.12)"
+  const rs = READER_STATUS[readerStatus] ?? READER_STATUS.disconnected;
+  const tag = lastTap ? tapTag(lastTap) : null;
+  const statusColor = tag ? tag.color : "#2e3540";
+  const statusBg = tag ? hexA(tag.color, 0.08) : "rgba(46,53,64,0.12)";
 
-  const activeStudents = db.getStudents().filter((s) => db.isClocked(s.id))
+  const activeStudents = db.getStudents().filter((s) => db.isClocked(s.id));
 
   return (
     <div
@@ -106,6 +122,19 @@ export default function Terminal() {
             "repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.06) 3px, rgba(0,0,0,0.06) 4px)",
           zIndex: 1,
         }}
+      />
+
+      {/* hidden HID card entry — never rendered/shown; captures dongle input */}
+      <input
+        ref={inputRef}
+        aria-hidden="true"
+        tabIndex={-1}
+        autoComplete="off"
+        autoCapitalize="off"
+        autoCorrect="off"
+        spellCheck={false}
+        className="sr-only"
+        onKeyDown={handleKeyDown}
       />
       {/* grid */}
       <div
@@ -292,10 +321,10 @@ export default function Terminal() {
               }}
               onMouseEnter={(e) => {
                 if (!lastTap && readerStatus === "connected")
-                  e.currentTarget.style.borderColor = "#00e5a0"
+                  e.currentTarget.style.borderColor = "#00e5a0";
               }}
               onMouseLeave={(e) => {
-                if (!lastTap) e.currentTarget.style.borderColor = "#2e3540"
+                if (!lastTap) e.currentTarget.style.borderColor = "#2e3540";
               }}
             >
               {scanning ? (
@@ -535,7 +564,7 @@ export default function Terminal() {
                 </div>
               ) : (
                 events.map((ev) => {
-                  const t = tapTag(ev.result)
+                  const t = tapTag(ev.result);
                   return (
                     <div
                       key={ev.id}
@@ -565,7 +594,7 @@ export default function Terminal() {
                         {ev.time}
                       </span>
                     </div>
-                  )
+                  );
                 })
               )}
             </div>
@@ -573,5 +602,5 @@ export default function Terminal() {
         </div>
       </div>
     </div>
-  )
+  );
 }
