@@ -208,12 +208,24 @@ await sdk.stopAcquisition()
 ```
 
 `Fingerprint.SampleFormat` has four values: `PngImage`, `Raw`, `Compressed`
-(WSQ), `Intermediate` (DigitalPersona's own extracted feature set — **not**
-NBIS-compatible, don't use it if pairing with `mindtct`/`bozorth3`). This
+(WSQ), `Intermediate` (DigitalPersona's own extracted feature set — a
+proprietary format, don't use it if pairing with `mindtct`/`bozorth3`). This
 repo's implementation (below) uses `PngImage` — it decodes with a single
 `Fingerprint.b64UrlTo64()` call, unlike `Raw`/`Compressed` which arrive
 double-encoded (JSON-wrapped inside the base64 payload) and weren't worth
 guessing the exact unwrap sequence for without hardware to test against.
+
+None of the three (`PngImage`, `Raw`, `Compressed`) are a free ride into
+`mindtct` — it doesn't read PNG natively, so §6's bridge needs to decode PNG
+into a raw/PGM buffer first (trivial with any image library; PNG's header
+conveniently self-describes width/height, unlike `Raw` which needs those
+pulled separately from `getDeviceInfo`). `Compressed` (WSQ) might avoid that
+conversion step entirely — NBIS ships its own WSQ codec, and `mindtct` may
+read `.wsq` directly — but that's not confirmed against real NBIS docs
+here, and the decode path for `Compressed` from this SDK is itself
+unverified (above). Worth revisiting once the matching bridge is actually
+being built and NBIS's real input requirements are in front of whoever's
+writing it.
 
 **No identify/match method exists in this client SDK** — confirmed capture
 -only, same limitation as Futronic (§3 applies).
