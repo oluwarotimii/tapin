@@ -1,10 +1,22 @@
 "use client"
 
-// Real client for the local fingerprint companion bridge described in
-// docs/fingerprint-integration.md. No hardware/bridge exists yet, so every
-// call below will genuinely fail with "not connected" until one is deployed
-// — nothing here fabricates a result. The moment a real bridge is running
-// on the kiosk machine, this starts working with zero app-code changes.
+// Client for fingerprint capture/matching. Two transports:
+//
+// 1. DigitalPersona's WebSDK (src/lib/digitalPersona.ts) — talks directly
+//    to the locally-installed "Digital Persona Lite Client" from the
+//    browser, no server-side bridge involved. Tried first for status and
+//    capture, since it's the confirmed-working path (docs/fingerprint-
+//    integration.md §5b).
+// 2. A generic local HTTP bridge (this file's original design, for any
+//    other vendor, e.g. Futronic) — no bridge is deployed for that yet, so
+//    those calls genuinely report "not connected" until one exists.
+//
+// Matching (bridgeIdentify) only has transport 2 — DigitalPersona's WebSDK
+// is capture-only, confirmed no identify/match call exists in it (§5b) — so
+// tap-time auto-identification stays unavailable until a matching bridge
+// (NBIS mindtct/bozorth3, §3/§4/§6) is built, regardless of vendor.
+
+import { captureDigitalPersonaSample, isDigitalPersonaAvailable } from "./digitalPersona"
 
 const BRIDGE_URL =
   process.env.NEXT_PUBLIC_FINGERPRINT_BRIDGE_URL ?? "http://127.0.0.1:8787"
@@ -15,7 +27,7 @@ function withTimeout(ms: number) {
     : undefined
 }
 
-export async function bridgeStatus(): Promise<boolean> {
+async function genericBridgeStatus(): Promise<boolean> {
   try {
     const res = await fetch(`${BRIDGE_URL}/status`, { signal: withTimeout(1500) })
     if (!res.ok) return false
@@ -26,7 +38,15 @@ export async function bridgeStatus(): Promise<boolean> {
   }
 }
 
+export async function bridgeStatus(): Promise<boolean> {
+  if (await isDigitalPersonaAvailable()) return true
+  return genericBridgeStatus()
+}
+
 export async function bridgeCapture(): Promise<string | null> {
+  const dpSample = await captureDigitalPersonaSample()
+  if (dpSample) return dpSample
+
   try {
     const res = await fetch(`${BRIDGE_URL}/capture`, {
       method: "POST",
