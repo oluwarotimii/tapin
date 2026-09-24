@@ -13,6 +13,7 @@ export type ApiScope =
   | "attendance_write"
   | "taps_write"
   | "cards_write"
+  | "fingerprints_write"
 
 export interface AuthOk {
   ok: true

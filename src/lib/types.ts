@@ -15,6 +15,7 @@ export interface Student {
   status: StudentStatus
   cardId?: string | null
   schedule?: ScheduleDay[]
+  fingerprintCount?: number
 }
 
 export type AttendanceStatus = "complete" | "incomplete" | "in_progress"
@@ -34,7 +35,7 @@ export interface AttendanceRecord {
 
 export interface ActiveSession {
   studentId: string // Student.id (internal)
-  cardId: string
+  cardId: string | null
   clockedInAt: string
   studentName?: string
 }

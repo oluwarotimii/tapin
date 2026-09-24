@@ -6,6 +6,7 @@ export type AdminPage =
   | "overview"
   | "students"
   | "cards"
+  | "fingerprints"
   | "schedule"
   | "log"
   | "devices"
@@ -89,6 +90,44 @@ const NAV: { id: AdminPage; label: string; icon: ReactNode }[] = [
           y2="8.5"
           stroke="currentColor"
           strokeWidth="1"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+  },
+  {
+    id: "fingerprints",
+    label: "Fingerprints",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path
+          d="M8 2.5a5.5 5.5 0 0 1 5.5 5.5v1.5"
+          stroke="currentColor"
+          strokeWidth="1.25"
+          strokeLinecap="round"
+        />
+        <path
+          d="M8 4.5a3.5 3.5 0 0 1 3.5 3.5v1.5"
+          stroke="currentColor"
+          strokeWidth="1.25"
+          strokeLinecap="round"
+        />
+        <path
+          d="M2.5 8a5.5 5.5 0 0 1 2.2-4.4"
+          stroke="currentColor"
+          strokeWidth="1.25"
+          strokeLinecap="round"
+        />
+        <path
+          d="M8 6.5a1.5 1.5 0 0 1 1.5 1.5v2.5a3 3 0 0 1-3 3"
+          stroke="currentColor"
+          strokeWidth="1.25"
+          strokeLinecap="round"
+        />
+        <path
+          d="M4.7 5.3A3.5 3.5 0 0 0 4.5 8v2a4.5 4.5 0 0 0 1 2.8"
+          stroke="currentColor"
+          strokeWidth="1.25"
           strokeLinecap="round"
         />
       </svg>

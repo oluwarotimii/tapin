@@ -10,7 +10,7 @@ type CardOp = "write" | "read" | "blank"
 export default function Cards() {
   const [op, setOp] = useState<CardOp>("write")
   const [selectedStudentId, setSelectedStudentId] = useState("")
-  const [simulatedCardId, setSimulatedCardId] = useState(generateCardId())
+  const [cardId, setCardId] = useState(generateCardId())
   const [result, setResult] = useState<{
     kind: "success" | "error" | "info"
     message: string
@@ -22,7 +22,7 @@ export default function Cards() {
   const students = db.getStudents().filter((s) => s.status === "active")
   const online = readerStatus === "connected"
 
-  function simulate() {
+  function runCardOp() {
     if (!online) return
     setScanning(true)
     setResult(null)
@@ -37,15 +37,15 @@ export default function Cards() {
         })
         return
       }
-      reader.writeCard(simulatedCardId, student.studentId).then((ok) => {
+      reader.writeCard(cardId, student.studentId).then((ok) => {
         setScanning(false)
         if (ok) {
           setResult({
             kind: "success",
             message: "Card written",
-            detail: `${simulatedCardId} → ${student.name} (${student.studentId})`,
+            detail: `${cardId} → ${student.name} (${student.studentId})`,
           })
-          setSimulatedCardId(generateCardId())
+          setCardId(generateCardId())
         } else {
           setResult({
             kind: "error",
@@ -55,37 +55,37 @@ export default function Cards() {
         }
       })
     } else if (op === "read") {
-      reader.readCard(simulatedCardId).then(({ student, isTapIn }) => {
+      reader.readCard(cardId).then(({ student, isTapIn }) => {
         setScanning(false)
         if (!isTapIn) {
           setResult({
             kind: "error",
             message: "Not a TapIn card",
-            detail: simulatedCardId,
+            detail: cardId,
           })
         } else if (student) {
           setResult({
             kind: "info",
             message: "Card recognized",
-            detail: `${simulatedCardId} → ${student.name} (${student.studentId}) · ${student.status}`,
+            detail: `${cardId} → ${student.name} (${student.studentId}) · ${student.status}`,
           })
         } else {
           setResult({
             kind: "error",
             message: "Card not linked",
-            detail: `${simulatedCardId} has no student assigned`,
+            detail: `${cardId} has no student assigned`,
           })
         }
       })
     } else {
-      reader.blankCard(simulatedCardId).then(() => {
+      reader.blankCard(cardId).then(() => {
         setScanning(false)
         setResult({
           kind: "success",
           message: "Card blanked",
-          detail: `${simulatedCardId} is now reusable`,
+          detail: `${cardId} is now reusable`,
         })
-        setSimulatedCardId(generateCardId())
+        setCardId(generateCardId())
       })
     }
   }
@@ -101,7 +101,7 @@ export default function Cards() {
             Cards
           </h1>
           <p className="text-xs font-mono mt-0.5" style={{ color: "#56627a" }}>
-            write · read · blank — simulated reader
+            write · read · blank — card ID assignment
           </p>
         </div>
         <span
@@ -144,7 +144,7 @@ export default function Cards() {
       </div>
 
       <div className="flex flex-col gap-6">
-        {/* Simulated card */}
+        {/* Card ID */}
         <div
           className="rounded-xl p-5"
           style={{ background: "#111418", border: "1px solid #1e2530" }}
@@ -153,7 +153,7 @@ export default function Cards() {
             className="text-xs font-mono uppercase tracking-widest mb-3"
             style={{ color: "#56627a" }}
           >
-            Simulated Card
+            Card ID
           </div>
           <div className="flex items-center gap-3">
             <div
@@ -200,16 +200,16 @@ export default function Cards() {
               </svg>
               <input
                 type="text"
-                value={simulatedCardId}
+                value={cardId}
                 onChange={(e) =>
-                  setSimulatedCardId(e.target.value.toUpperCase())
+                  setCardId(e.target.value.toUpperCase())
                 }
                 className="flex-1 text-sm font-mono outline-none bg-transparent"
                 style={{ color: "#dde2ec", caretColor: "#00e5a0" }}
               />
             </div>
             <button
-              onClick={() => setSimulatedCardId(generateCardId())}
+              onClick={() => setCardId(generateCardId())}
               className="text-xs font-mono px-3 py-2.5 rounded-lg transition-all"
               style={{
                 background: "#181c22",
@@ -304,7 +304,7 @@ export default function Cards() {
         {/* Tap button */}
         <div className="flex items-center gap-4">
           <button
-            onClick={simulate}
+            onClick={runCardOp}
             disabled={scanning || !online}
             className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-mono transition-all"
             style={{
@@ -413,9 +413,7 @@ export default function Cards() {
             )}
           </button>
           <span className="text-xs font-mono" style={{ color: "#2e3540" }}>
-            {online
-              ? "simulates placing card on reader"
-              : "reader offline — connect a device"}
+            {online ? "applies to this student now" : "reader offline — connect a device"}
           </span>
         </div>
 

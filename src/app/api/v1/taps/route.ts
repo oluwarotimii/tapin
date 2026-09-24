@@ -1,5 +1,5 @@
 import { authorizeRequest, authFailResponse } from "@/server/guard"
-import { logTap, tap } from "@/server/domain"
+import { logTap, tapByCard, tapByStudentId } from "@/server/domain"
 import { tapRequest } from "@/lib/validation"
 
 export async function POST(req: Request) {
@@ -16,9 +16,14 @@ export async function POST(req: Request) {
       ? "api_key"
       : auth.auth.type === "session"
         ? "session"
-        : "tap"
+        : parsed.data.student_id
+          ? "fingerprint"
+          : "tap"
 
-  const result = await tap(parsed.data.card_id, source)
-  logTap(parsed.data.card_id, result, source)
+  const identifier = parsed.data.card_id ?? parsed.data.student_id!
+  const result = parsed.data.card_id
+    ? await tapByCard(parsed.data.card_id, source)
+    : await tapByStudentId(parsed.data.student_id!, source)
+  logTap(identifier, result, source)
   return Response.json({ result })
 }

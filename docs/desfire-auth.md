@@ -173,7 +173,8 @@ by itself prove to the *server* that a genuine reader sent the POST. Two levels:
 ### 6a. Require an API key, drop `allowPublic` for real readers
 
 `taps/route.ts` currently calls `authorizeRequest(req, ["taps_write"], { allowPublic: true })`.
-`allowPublic` exists for the login-free simulated kiosk. For a hardware reader:
+`allowPublic` exists for the login-free kiosk (real HID card taps, no admin
+session). For a hardware reader wired through a companion service instead:
 
 - Issue the companion service a dedicated **`taps_write`** API key
   (Admin → API Keys). Only holders of a valid key can POST.
@@ -308,8 +309,8 @@ attendance it's optional.
 - `src/app/api/v1/taps/route.ts` — optionally verify §6b attestation; tighten
   `allowPublic`.
 - `src/lib/validation.ts` — optional `auth` block on `tapRequest`.
-- `src/reader.ts` — the client simulator stays; the **real** reader is a separate
-  companion process, not this file. Keep `reader.ts` for the kiosk demo.
+- `src/reader.ts` — stays as-is for HID keyboard-wedge card taps; a DESFire
+  AES reader instead posts from a separate companion process, not this file.
 - `prisma/schema.prisma` — optional `TapNonce` table if you add replay defense
   and run multiple instances.
 - Companion service — **new, out-of-repo** (or a `service/` dir): holds

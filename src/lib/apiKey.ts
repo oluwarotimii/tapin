@@ -11,6 +11,7 @@ export const API_KEY_SCOPES = [
   "attendance_write",
   "taps_write",
   "cards_write",
+  "fingerprints_write",
 ] as const
 
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number]
