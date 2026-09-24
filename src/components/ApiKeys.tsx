@@ -22,6 +22,7 @@ const SCOPE_LABELS: Record<string, string> = {
   attendance_write: "attendance:write",
   taps_write: "taps:write",
   cards_write: "cards:write",
+  fingerprints_write: "fingerprints:write",
 }
 
 const SCOPE_COLORS: Record<string, string> = {
@@ -33,6 +34,7 @@ const SCOPE_COLORS: Record<string, string> = {
   attendance_write: "#00e5a0",
   taps_write: "#ffb03a",
   cards_write: "#ffb03a",
+  fingerprints_write: "#ffb03a",
 }
 
 export default function ApiKeys() {

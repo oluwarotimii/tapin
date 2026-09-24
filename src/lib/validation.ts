@@ -30,8 +30,22 @@ export const scheduleDay = z.object({
   minimum_minutes: z.number().int().min(0).max(24 * 60),
 })
 
-export const tapRequest = z.object({
-  card_id: z.string().min(1).max(100),
+export const tapRequest = z
+  .object({
+    card_id: z.string().min(1).max(100).optional(),
+    student_id: z.string().min(1).max(60).optional(),
+  })
+  .refine((d) => !!d.card_id !== !!d.student_id, {
+    message: "exactly one of card_id or student_id is required",
+  })
+
+export const fingerprintEnroll = z.object({
+  finger: z.string().min(1).max(40),
+  template: z.string().min(1).max(20000),
+})
+
+export const fingerprintRemove = z.object({
+  finger: z.string().min(1).max(40).optional(),
 })
 
 export const attendancePush = z.object({
@@ -67,6 +81,7 @@ export const apiKeyCreate = z.object({
         "attendance_write",
         "taps_write",
         "cards_write",
+        "fingerprints_write",
       ]),
     )
     .min(1),

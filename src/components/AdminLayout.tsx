@@ -7,6 +7,7 @@ const PAGE_MAP: Record<string, AdminPage> = {
   "/admin": "overview",
   "/admin/students": "students",
   "/admin/cards": "cards",
+  "/admin/fingerprints": "fingerprints",
   "/admin/schedule": "schedule",
   "/admin/log": "log",
   "/admin/devices": "devices",

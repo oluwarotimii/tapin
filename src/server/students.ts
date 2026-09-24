@@ -72,6 +72,29 @@ export async function readCard(cardId: string) {
   }
 }
 
+// ── fingerprints ────────────────────────────────────────────────────────────
+// `id` here is the internal Student.id, matching the other students/[id]/*
+// nested routes (schedule, etc.) — not the external studentId cardWrite uses.
+export async function enrollFingerprint(
+  id: string,
+  finger: string,
+  template: string,
+) {
+  const student = await prisma.student.findUnique({ where: { id } })
+  if (!student) return false
+  await prisma.fingerprintTemplate.create({
+    data: { studentId: id, finger, template },
+  })
+  return true
+}
+
+export async function removeFingerprint(id: string, finger?: string) {
+  await prisma.fingerprintTemplate.deleteMany({
+    where: { studentId: id, ...(finger ? { finger } : {}) },
+  })
+  return true
+}
+
 // ── default template schedule ───────────────────────────────────────────────
 export async function getDefaultSchedule(): Promise<ScheduleDay[]> {
   const rows = await prisma.scheduleDay.findMany({

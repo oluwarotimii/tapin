@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { reader, type TapEvent } from "../reader"
-import { useReaderStatus } from "../hooks"
+import { useReaderStatus, useFingerprintBridgeConnected } from "../hooks"
 import { tapTag, hexA } from "../tapFormat"
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
@@ -14,8 +14,8 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
 
 export default function Devices() {
   const status = useReaderStatus()
+  const fingerprintConnected = useFingerprintBridgeConnected()
   const [feed, setFeed] = useState<TapEvent[]>([])
-  const [testCard, setTestCard] = useState("CARD-A1B2")
 
   useEffect(() => {
     return reader.subscribeTaps((ev) => {
@@ -52,11 +52,6 @@ export default function Devices() {
   }, [])
 
   const meta = STATUS_META[status] ?? STATUS_META.disconnected
-  const lastTap = feed[0]
-
-  function handleTestTap() {
-    reader.simulateTap(testCard.trim().toUpperCase())
-  }
 
   return (
     <div className="p-6 max-w-3xl">
@@ -66,7 +61,7 @@ export default function Devices() {
           Devices
         </h1>
         <p className="text-xs font-mono mt-0.5" style={{ color: "#56627a" }}>
-          reader & companion service
+          card reader & fingerprint bridge
         </p>
       </div>
 
@@ -105,10 +100,10 @@ export default function Devices() {
                 className="text-sm font-semibold"
                 style={{ color: "#dde2ec" }}
               >
-                NFC Reader
+                RFID Reader
               </div>
               <div className="text-xs font-mono" style={{ color: "#56627a" }}>
-                ACR122U · PC/SC · nfc-pcsc
+                USB HID keyboard-wedge · reads card UID as keystrokes
               </div>
             </div>
           </div>
@@ -145,94 +140,91 @@ export default function Devices() {
           ) : (
             <button
               onClick={() => reader.connect()}
-              disabled={status === "connecting"}
               className="text-xs font-mono px-3 py-1.5 rounded transition-all"
               style={{ background: "#00e5a0", color: "#0a0c0f" }}
               onMouseEnter={(e) => {
-                if (status !== "connecting")
-                  e.currentTarget.style.background = "#00ffb3"
+                e.currentTarget.style.background = "#00ffb3"
               }}
               onMouseLeave={(e) => {
-                if (status !== "connecting")
-                  e.currentTarget.style.background = "#00e5a0"
+                e.currentTarget.style.background = "#00e5a0"
               }}
             >
-              {status === "connecting" ? "Connecting…" : "Connect"}
+              Connect
             </button>
           )}
           <span className="text-xs font-mono" style={{ color: "#2e3540" }}>
-            simulated — a real reader is relayed via the companion service
+            arms/disarms the kiosk's card input — no separate service needed
           </span>
         </div>
       </div>
 
-      {/* Test tap */}
+      {/* Fingerprint bridge panel */}
       <div
         className="rounded-xl p-5 mb-4"
         style={{ background: "#111418", border: "1px solid #1e2530" }}
       >
-        <div
-          className="text-xs font-mono uppercase tracking-widest mb-3"
-          style={{ color: "#56627a" }}
-        >
-          Test tap
-        </div>
-        <div className="flex items-center gap-3">
-          <input
-            type="text"
-            value={testCard}
-            onChange={(e) => setTestCard(e.target.value)}
-            disabled={status !== "connected"}
-            className="flex-1 px-3 py-2.5 rounded-lg text-sm font-mono outline-none"
-            style={{
-              background: "#181c22",
-              border: "1px solid #1e2530",
-              color: "#dde2ec",
-              caretColor: "#00e5a0",
-            }}
-          />
-          <button
-            onClick={handleTestTap}
-            disabled={status !== "connected"}
-            className="text-xs font-mono px-4 py-2.5 rounded-lg transition-all"
-            style={{
-              background:
-                status === "connected"
-                  ? "rgba(0,229,160,0.12)"
-                  : "rgba(46,53,64,0.3)",
-              color: status === "connected" ? "#00e5a0" : "#2e3a4e",
-              border: `1px solid ${
-                status === "connected" ? "rgba(0,229,160,0.3)" : "#1e2530"
-              }`,
-              cursor: status === "connected" ? "pointer" : "not-allowed",
-            }}
-          >
-            Simulate tap
-          </button>
-        </div>
-        {lastTap && (
-          <div className="mt-3 flex items-center gap-2 animate-slide-up">
-            <span
-              className="text-xs font-mono px-1.5 py-0.5 rounded"
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center"
               style={{
-                background: hexA(tapTag(lastTap.result).color, 0.1),
-                color: tapTag(lastTap.result).color,
-                border: `1px solid ${hexA(tapTag(lastTap.result).color, 0.2)}`,
+                background: hexA(
+                  fingerprintConnected ? "#00e5a0" : "#ff4d6a",
+                  0.1,
+                ),
+                border: `1px solid ${hexA(
+                  fingerprintConnected ? "#00e5a0" : "#ff4d6a",
+                  0.25,
+                )}`,
               }}
             >
-              {tapTag(lastTap.result).label}
-            </span>
-            <span className="text-xs" style={{ color: "#dde2ec" }}>
-              {tapTag(lastTap.result).headline}
-            </span>
-            <span
-              className="text-xs font-mono ml-auto"
-              style={{ color: "#56627a" }}
-            >
-              {lastTap.time}
-            </span>
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <path
+                  d="M9 2.5a6 6 0 0 1 6 6v1.5"
+                  stroke={fingerprintConnected ? "#00e5a0" : "#ff4d6a"}
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M9 6.5a2 2 0 0 1 2 2v3a4 4 0 0 1-4 4"
+                  stroke={fingerprintConnected ? "#00e5a0" : "#ff4d6a"}
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M3 9a6 6 0 0 1 2.5-4.9"
+                  stroke={fingerprintConnected ? "#00e5a0" : "#ff4d6a"}
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </div>
+            <div>
+              <div
+                className="text-sm font-semibold"
+                style={{ color: "#dde2ec" }}
+              >
+                Fingerprint Bridge
+              </div>
+              <div className="text-xs font-mono" style={{ color: "#56627a" }}>
+                local companion service · see docs/fingerprint-integration.md
+              </div>
+            </div>
           </div>
-        )}
+          <span
+            className="text-xs font-mono px-2.5 py-1 rounded-full capitalize"
+            style={{
+              background: hexA(fingerprintConnected ? "#00e5a0" : "#ff4d6a", 0.1),
+              color: fingerprintConnected ? "#00e5a0" : "#ff4d6a",
+              border: `1px solid ${hexA(
+                fingerprintConnected ? "#00e5a0" : "#ff4d6a",
+                0.25,
+              )}`,
+            }}
+          >
+            {fingerprintConnected ? "online" : "not connected"}
+          </span>
+        </div>
       </div>
 
       {/* Live tap feed */}

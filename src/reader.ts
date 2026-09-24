@@ -10,7 +10,6 @@ export interface TapEvent {
 }
 
 let status: ReaderStatus = "connected"
-let connectTimer: ReturnType<typeof setTimeout> | null = null
 
 const statusListeners = new Set<() => void>()
 const tapListeners = new Set<(ev: TapEvent) => void>()
@@ -21,9 +20,6 @@ function pad(n: number) {
 function nowTime() {
   const d = new Date()
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-}
-function delay(ms: number) {
-  return new Promise<void>((res) => setTimeout(res, ms))
 }
 
 export const reader = {
@@ -43,27 +39,24 @@ export const reader = {
     }
   },
 
+  // Manual kiosk online/offline toggle — arms/disarms the hidden HID capture
+  // input (see useHidCapture.ts). There is no real "device present" signal
+  // for a keyboard-wedge reader, so this is a deliberate operator switch,
+  // not a simulated hardware handshake.
   connect() {
-    if (connectTimer) return
-    status = "connecting"
+    status = "connected"
     statusListeners.forEach((l) => l())
-    connectTimer = setTimeout(() => {
-      status = "connected"
-      connectTimer = null
-      statusListeners.forEach((l) => l())
-    }, 800)
   },
 
   disconnect() {
-    if (connectTimer) {
-      clearTimeout(connectTimer)
-      connectTimer = null
-    }
     status = "disconnected"
     statusListeners.forEach((l) => l())
   },
 
-  async simulateTap(cardId: string) {
+  // Called for every real card read — either physical HID keystrokes
+  // (useHidCapture.ts) or an admin-triggered card assignment test. Posts a
+  // real tap to POST /api/v1/taps.
+  async submitCardTap(cardId: string) {
     if (status !== "connected") return
     const result = await db.tapCard(cardId)
     const ev: TapEvent = {
@@ -75,15 +68,30 @@ export const reader = {
     tapListeners.forEach((l) => l(ev))
   },
 
+  // Called once the local fingerprint bridge (docs/fingerprint-integration.md)
+  // has resolved a scan to a student. Feeds the same tap-event stream as
+  // submitCardTap so the UI needs no separate rendering path.
+  async submitFingerprintTap(studentId: string) {
+    if (status !== "connected") return
+    const result = await db.tapFingerprint(studentId)
+    const ev: TapEvent = {
+      id: crypto.randomUUID(),
+      cardId: studentId,
+      result,
+      time: nowTime(),
+    }
+    tapListeners.forEach((l) => l(ev))
+  },
+
   writeCard(cardId: string, studentId: string) {
-    return delay(300).then(() => db.writeCard(studentId, cardId))
+    return db.writeCard(studentId, cardId)
   },
 
   readCard(cardId: string) {
-    return delay(200).then(() => db.readCard(cardId))
+    return db.readCard(cardId)
   },
 
   blankCard(cardId: string) {
-    return delay(300).then(() => db.blankCard(cardId))
+    return db.blankCard(cardId)
   },
 }

@@ -5,17 +5,9 @@ import { db, type TapResult } from "../store";
 import { reader, type TapEvent } from "../reader";
 import { useReaderStatus } from "../hooks";
 import { useHidCapture } from "../useHidCapture";
+import { bridgeIdentify } from "../lib/fingerprintBridge";
 import { tapTag, hexA } from "../tapFormat";
 
-// Demo cards that cycle through real students + one unknown
-const DEMO_CARDS = [
-  "CARD-A1B2",
-  "CARD-C3D4",
-  "CARD-E5F6",
-  "CARD-A1B2",
-  "CARD-XXXX",
-  "CARD-C3D4",
-];
 const CLEAR_DELAY = 2800; // ms before status resets to idle
 
 const READER_STATUS: Record<string, { label: string; color: string }> = {
@@ -31,7 +23,6 @@ export default function Terminal() {
   const [tapKey, setTapKey] = useState(0);
   const [events, setEvents] = useState<TapEvent[]>([]);
   const [scanning, setScanning] = useState(false);
-  const [demoIdx, setDemoIdx] = useState(0);
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const readerStatus = useReaderStatus();
 
@@ -40,16 +31,14 @@ export default function Terminal() {
     return () => clearInterval(t);
   }, []);
 
-  // Process a card read coming from either the physical HID dongle or the
-  // demo button. The card detail is kept hidden — only the outcome is shown.
+  // Process a card read coming from the physical HID dongle. The card detail
+  // is kept hidden — only the outcome is shown.
   const performTap = useCallback(
-    (cardId: string) => {
+    async (cardId: string) => {
       if (scanning || readerStatus !== "connected") return;
       setScanning(true);
-      setTimeout(() => {
-        reader.simulateTap(cardId);
-        setScanning(false);
-      }, 180);
+      await reader.submitCardTap(cardId);
+      setScanning(false);
     },
     [scanning, readerStatus],
   );
@@ -58,6 +47,30 @@ export default function Terminal() {
     enabled: readerStatus === "connected",
     onCard: (cardId) => performTap(cardId),
   });
+
+  // Background loop against the local fingerprint bridge
+  // (docs/fingerprint-integration.md). Blocks on /identify until a match or
+  // timeout, then feeds the result into the same tap-event stream as card
+  // taps. No bridge is deployed yet, so this genuinely idles/no-ops until
+  // one exists — it is not a simulation.
+  useEffect(() => {
+    if (readerStatus !== "connected") return;
+    let cancelled = false;
+    (async () => {
+      while (!cancelled) {
+        const studentId = await bridgeIdentify();
+        if (cancelled) return;
+        if (studentId) {
+          await reader.submitFingerprintTap(studentId);
+        } else {
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [readerStatus]);
 
   useEffect(() => {
     return reader.subscribeTaps((ev) => {
@@ -90,13 +103,6 @@ export default function Terminal() {
     ];
     return db.getSchedule().find((s) => s.day === days[now.getDay()]);
   })();
-
-  const handleDemoTap = useCallback(() => {
-    if (scanning || readerStatus !== "connected") return;
-    const card = DEMO_CARDS[demoIdx % DEMO_CARDS.length];
-    setDemoIdx((i) => i + 1);
-    performTap(card);
-  }, [scanning, readerStatus, demoIdx, performTap]);
 
   const rs = READER_STATUS[readerStatus] ?? READER_STATUS.disconnected;
   const tag = lastTap ? tapTag(lastTap) : null;
@@ -303,28 +309,14 @@ export default function Terminal() {
               </>
             )}
 
-            <button
-              onClick={handleDemoTap}
-              disabled={scanning || readerStatus !== "connected"}
-              className="rounded-full flex flex-col items-center justify-center select-none transition-all"
+            <div
+              className="rounded-full flex flex-col items-center justify-center select-none"
               style={{
                 width: 190,
                 height: 190,
                 background: statusBg,
                 border: `2px solid ${statusColor}`,
-                cursor: scanning
-                  ? "wait"
-                  : readerStatus !== "connected"
-                    ? "not-allowed"
-                    : "pointer",
                 transition: "background 0.25s, border-color 0.25s",
-              }}
-              onMouseEnter={(e) => {
-                if (!lastTap && readerStatus === "connected")
-                  e.currentTarget.style.borderColor = "#00e5a0";
-              }}
-              onMouseLeave={(e) => {
-                if (!lastTap) e.currentTarget.style.borderColor = "#2e3540";
               }}
             >
               {scanning ? (
@@ -439,7 +431,7 @@ export default function Terminal() {
                   </span>
                 </>
               )}
-            </button>
+            </div>
           </div>
 
           {/* status message */}
@@ -468,13 +460,6 @@ export default function Terminal() {
             )}
           </div>
 
-          {/* demo hint */}
-          <div
-            className="mono text-xs px-3 py-1 rounded"
-            style={{ color: "#2e3a4e", border: "1px solid #1a2028" }}
-          >
-            demo — click circle to simulate a tap
-          </div>
         </div>
 
         {/* ── right panel ── */}

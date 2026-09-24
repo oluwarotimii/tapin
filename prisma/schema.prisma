@@ -24,6 +24,7 @@ enum ApiKeyScope {
   attendance_write
   taps_write
   cards_write
+  fingerprints_write
 }
 
 model ApiKey {
@@ -53,6 +54,18 @@ model Student {
   schedule  ScheduleDay[]
   attendance AttendanceRecord[]
   session   ActiveSession?
+  fingerprintTemplates FingerprintTemplate[]
+}
+
+model FingerprintTemplate {
+  id        String   @id @default(cuid())
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  finger    String
+  template  String
+  createdAt DateTime @default(now())
+
+  @@index([studentId])
 }
 
 model ScheduleDay {
@@ -95,6 +108,6 @@ model ActiveSession {
   id          String   @id @default(cuid())
   studentId   String   @unique
   student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  cardId      String
+  cardId      String?
   clockedInAt DateTime @default(now())
 }

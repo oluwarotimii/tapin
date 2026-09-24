@@ -266,6 +266,28 @@ export const db = {
     bump()
   },
 
+  // ── fingerprints ─────────────────────────────────────────────────────────
+  async enrollFingerprint(id: string, finger: string, template: string) {
+    const res = await api<{ ok: boolean }>(`/api/v1/students/${id}/fingerprint`, {
+      method: "POST",
+      body: JSON.stringify({ finger, template }),
+    })
+    if (res.ok) {
+      const target = _c.students.find((s) => s.id === id)
+      if (target) target.fingerprintCount = (target.fingerprintCount ?? 0) + 1
+      bump()
+    }
+    return res.ok
+  },
+
+  async removeFingerprint(id: string, finger?: string) {
+    await api<{ ok: boolean }>(
+      `/api/v1/students/${id}/fingerprint${finger ? `?finger=${encodeURIComponent(finger)}` : ""}`,
+      { method: "DELETE" },
+    )
+    await loadAll()
+  },
+
   // ── sessions ───────────────────────────────────────────────────────────────
   isClocked: (studentId: string) =>
     _c.activeSessions.some((s) => s.studentId === studentId),
@@ -277,44 +299,17 @@ export const db = {
       method: "POST",
       body: JSON.stringify({ card_id: cardId }),
     })
-    const result = res.result
-    if (result.kind === "clocked_in") {
-      _c.activeSessions.push({
-        studentId: result.student.id,
-        cardId,
-        clockedInAt: new Date().toISOString(),
-        studentName: result.student.name,
-      })
-      _c.attendance.push({
-        id: `tmp-${crypto.randomUUID()}`,
-        studentId: result.student.studentId,
-        studentName: result.student.name,
-        date: new Date().toISOString().slice(0, 10),
-        clockIn: new Date().toTimeString().slice(0, 5),
-        status: "in_progress",
-        override: result.override,
-      })
-    } else if (result.kind === "clocked_out") {
-      _c.activeSessions = _c.activeSessions.filter(
-        (s) => s.studentId !== result.student.id,
-      )
-      const rec = _c.attendance.find(
-        (r) =>
-          r.studentId === result.student.studentId &&
-          r.status === "in_progress",
-      )
-      if (rec) {
-        rec.clockOut = new Date().toTimeString().slice(0, 5)
-        rec.durationMinutes = result.durationMinutes
-        rec.status =
-          result.durationMinutes >=
-          (effectiveMinutes(result.student) ?? 0)
-            ? "complete"
-            : "incomplete"
-      }
-    }
-    bump()
-    return result
+    applyTapResult(res.result, cardId)
+    return res.result
+  },
+
+  async tapFingerprint(studentId: string): Promise<TapResult> {
+    const res = await api<{ result: TapResult }>("/api/v1/taps", {
+      method: "POST",
+      body: JSON.stringify({ student_id: studentId }),
+    })
+    applyTapResult(res.result, null)
+    return res.result
   },
 
   // ── attendance ─────────────────────────────────────────────────────────────
@@ -323,6 +318,44 @@ export const db = {
   async exportAttendanceCSV(): Promise<string> {
     return apiText("/api/v1/attendance/export")
   },
+}
+
+function applyTapResult(result: TapResult, cardId: string | null) {
+  if (result.kind === "clocked_in") {
+    _c.activeSessions.push({
+      studentId: result.student.id,
+      cardId,
+      clockedInAt: new Date().toISOString(),
+      studentName: result.student.name,
+    })
+    _c.attendance.push({
+      id: `tmp-${crypto.randomUUID()}`,
+      studentId: result.student.studentId,
+      studentName: result.student.name,
+      date: new Date().toISOString().slice(0, 10),
+      clockIn: new Date().toTimeString().slice(0, 5),
+      status: "in_progress",
+      override: result.override,
+    })
+  } else if (result.kind === "clocked_out") {
+    _c.activeSessions = _c.activeSessions.filter(
+      (s) => s.studentId !== result.student.id,
+    )
+    const rec = _c.attendance.find(
+      (r) =>
+        r.studentId === result.student.studentId &&
+        r.status === "in_progress",
+    )
+    if (rec) {
+      rec.clockOut = new Date().toTimeString().slice(0, 5)
+      rec.durationMinutes = result.durationMinutes
+      rec.status =
+        result.durationMinutes >= (effectiveMinutes(result.student) ?? 0)
+          ? "complete"
+          : "incomplete"
+    }
+  }
+  bump()
 }
 
 function effectiveMinutes(student: Student): number | undefined {

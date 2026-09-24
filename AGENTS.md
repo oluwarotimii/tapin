@@ -31,7 +31,8 @@ This is the canonical project structure. Start with task-relevant files below. O
 - `src/app/api/keys/` - API key management (admin session only)
 - `src/components/` - Client UI components (Terminal, admin views, Login/Setup, ApiKeys)
 - `src/store.ts` - Client-side data cache mirroring the old sync `db.*` API; optimistic mutations backed by the API
-- `src/reader.ts` - Client reader seam (simulated now; real companion service posts taps to `POST /api/v1/taps`)
+- `src/reader.ts` - Client reader seam: real HID card taps (`submitCardTap`) and fingerprint-bridge-resolved taps (`submitFingerprintTap`), both posting to `POST /api/v1/taps`
+- `src/lib/fingerprintBridge.ts` - Real HTTP client for the local fingerprint companion bridge (`docs/fingerprint-integration.md`); no bridge is deployed yet so calls genuinely report "not connected" until one exists
 - `src/lib/` - Shared types, API fetch helpers, session auth (`session.ts`), API key crypto (`apiKey.ts`), validation, CSV parser
 - `src/server/` - Server-only domain logic: `domain.ts` (tap rules), `students.ts`, `attendance.ts`, `guard.ts` (auth/scopes)
 - `prisma/schema.prisma` - Data model: `User`, `ApiKey`, `Student`, `ScheduleDay`, `AttendanceRecord`, `ActiveSession`
@@ -47,7 +48,7 @@ This is the canonical project structure. Start with task-relevant files below. O
 
 ## API key auth
 
-External apps authenticate with a scoped key: `Authorization: Bearer tp_…`. Keys are created/revoked in **Admin → API Keys**. Scopes (`students_read`, `students_write`, `schedules_*`, `attendance_*`, `taps_write`, `cards_write`) gate each `/api/v1` endpoint; a missing scope returns `403`. The web session counts as full admin access.
+External apps authenticate with a scoped key: `Authorization: Bearer tp_…`. Keys are created/revoked in **Admin → API Keys**. Scopes (`students_read`, `students_write`, `schedules_*`, `attendance_*`, `taps_write`, `cards_write`, `fingerprints_write`) gate each `/api/v1` endpoint; a missing scope returns `403`. The web session counts as full admin access.
 
 ## Public tap kiosk
 
@@ -65,3 +66,13 @@ Tailwind CSS v4 via the `@tailwindcss/postcss` plugin in `postcss.config.mjs`. `
 - Do **not** run `npm run format` with oxfmt — the formatter is `prettier`. Use `npx prettier --write .` if needed.
 - After schema changes: `pnpm db:migrate` then `pnpm db:generate`.
 - Verify with `npx tsc --noEmit` and `pnpm build` before finishing a task.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

@@ -22,7 +22,8 @@ interface StudentWithSchedule {
   status: string
   cardId: string | null
   schedule: ScheduleDay[]
-  session?: { id: string; cardId: string; clockedInAt: Date } | null
+  session?: { id: string; cardId: string | null; clockedInAt: Date } | null
+  _count?: { fingerprintTemplates: number }
 }
 
 function toStudent(s: StudentWithSchedule): Student {
@@ -39,13 +40,18 @@ function toStudent(s: StudentWithSchedule): Student {
       end: d.end,
       minimumMinutes: d.minimumMinutes,
     })),
+    fingerprintCount: s._count?.fingerprintTemplates,
   }
 }
 
 // ── queries ──────────────────────────────────────────────────────────────────
 export async function getStudents(): Promise<Student[]> {
   const rows = await prisma.student.findMany({
-    include: { schedule: true, session: true },
+    include: {
+      schedule: true,
+      session: true,
+      _count: { select: { fingerprintTemplates: true } },
+    },
     orderBy: { studentId: "asc" },
   })
   return rows.map(toStudent)
@@ -54,7 +60,11 @@ export async function getStudents(): Promise<Student[]> {
 export async function getStudentByInternalId(id: string) {
   const s = await prisma.student.findUnique({
     where: { id },
-    include: { schedule: true, session: true },
+    include: {
+      schedule: true,
+      session: true,
+      _count: { select: { fingerprintTemplates: true } },
+    },
   })
   return s ? toStudent(s) : null
 }
@@ -107,94 +117,119 @@ async function effectiveSchedule(
   return defaults
 }
 
-export async function tap(cardId: string, source = "tap"): Promise<TapResult> {
-  const now = new Date()
-  const today = DAYS[now.getDay()]
-
+export async function tapByCard(cardId: string, source = "tap"): Promise<TapResult> {
   return prisma.$transaction(async (tx) => {
     const student = await tx.student.findUnique({
       where: { cardId },
       include: { schedule: true, session: true },
     })
+    return performTap(tx, student, cardId, source)
+  })
+}
 
-    if (!student || student.status !== "active") {
-      const r: TapResult = { kind: "not_recognized" }
-      return r
-    }
+export async function tapByStudentId(
+  studentId: string,
+  source = "tap",
+): Promise<TapResult> {
+  return prisma.$transaction(async (tx) => {
+    const student = await tx.student.findUnique({
+      where: { studentId },
+      include: { schedule: true, session: true },
+    })
+    return performTap(tx, student, null, source)
+  })
+}
 
-    const sched = await effectiveSchedule(tx, student)
-    const slot = sched.find((d) => d.day === today)
-    const session = student.session
+type TappableStudent = StudentWithSchedule & {
+  session: { id: string; clockedInAt: Date } | null
+}
 
-    // ── already clocked in → try to clock out ─────────────────────────────
-    if (session) {
-      const elapsed = Math.floor(
-        (now.getTime() - session.clockedInAt.getTime()) / 60000,
-      )
-      const required = slot?.minimumMinutes ?? 0
+async function performTap(
+  tx: Prisma.TransactionClient,
+  student: TappableStudent | null,
+  cardId: string | null,
+  source: string,
+): Promise<TapResult> {
+  const now = new Date()
+  const today = DAYS[now.getDay()]
 
-      if (elapsed < required) {
-        return {
-          kind: "too_early",
-          student: toStudent(student),
-          remainingMinutes: required - elapsed,
-        } as TapResult
-      }
+  if (!student || student.status !== "active") {
+    const r: TapResult = { kind: "not_recognized" }
+    return r
+  }
 
-      await tx.activeSession.delete({ where: { id: session.id } })
-      const rec = await tx.attendanceRecord.findFirst({
-        where: {
-          studentId: student.id,
-          date: dateStr(now),
-          status: "in_progress",
-        },
-      })
-      if (rec) {
-        await tx.attendanceRecord.update({
-          where: { id: rec.id },
-          data: {
-            clockOut: timeStr(now),
-            durationMinutes: elapsed,
-            status: elapsed >= required ? "complete" : "incomplete",
-          },
-        })
-      }
+  const sched = await effectiveSchedule(tx, student)
+  const slot = sched.find((d) => d.day === today)
+  const session = student.session
+
+  // ── already clocked in → try to clock out ───────────────────────────────
+  if (session) {
+    const elapsed = Math.floor(
+      (now.getTime() - session.clockedInAt.getTime()) / 60000,
+    )
+    const required = slot?.minimumMinutes ?? 0
+
+    if (elapsed < required) {
       return {
-        kind: "clocked_out",
+        kind: "too_early",
         student: toStudent(student),
-        durationMinutes: elapsed,
+        remainingMinutes: required - elapsed,
       } as TapResult
     }
 
-    // ── not clocked in → clock in ─────────────────────────────────────────
-    const done = await tx.attendanceRecord.findFirst({
-      where: { studentId: student.id, date: dateStr(now) },
-    })
-    if (done && done.status !== "in_progress") {
-      return { kind: "already_complete", student: toStudent(student) } as TapResult
-    }
-
-    const nowM = now.getHours() * 60 + now.getMinutes()
-    const inWindow =
-      !!slot && nowM >= toMinutes(slot.start) && nowM < toMinutes(slot.end)
-
-    await tx.activeSession.create({
-      data: { studentId: student.id, cardId, clockedInAt: now },
-    })
-    await tx.attendanceRecord.create({
-      data: {
+    await tx.activeSession.delete({ where: { id: session.id } })
+    const rec = await tx.attendanceRecord.findFirst({
+      where: {
         studentId: student.id,
         date: dateStr(now),
-        clockIn: timeStr(now),
         status: "in_progress",
-        override: !inWindow,
-        source,
       },
     })
+    if (rec) {
+      await tx.attendanceRecord.update({
+        where: { id: rec.id },
+        data: {
+          clockOut: timeStr(now),
+          durationMinutes: elapsed,
+          status: elapsed >= required ? "complete" : "incomplete",
+        },
+      })
+    }
     return {
-      kind: "clocked_in",
+      kind: "clocked_out",
       student: toStudent(student),
-      override: inWindow ? undefined : true,
+      durationMinutes: elapsed,
     } as TapResult
+  }
+
+  // ── not clocked in → clock in ────────────────────────────────────────────
+  const done = await tx.attendanceRecord.findFirst({
+    where: { studentId: student.id, date: dateStr(now) },
   })
+  if (done && done.status !== "in_progress") {
+    return { kind: "already_complete", student: toStudent(student) } as TapResult
+  }
+
+  const nowM = now.getHours() * 60 + now.getMinutes()
+  const inWindow =
+    !!slot && nowM >= toMinutes(slot.start) && nowM < toMinutes(slot.end)
+
+  await tx.activeSession.create({
+    data: { studentId: student.id, cardId, clockedInAt: now },
+  })
+  await tx.attendanceRecord.create({
+    data: {
+      studentId: student.id,
+      date: dateStr(now),
+      clockIn: timeStr(now),
+      status: "in_progress",
+      override: !inWindow,
+      source,
+    },
+  })
+  return {
+    kind: "clocked_in",
+    student: toStudent(student),
+    override: inWindow ? undefined : true,
+  } as TapResult
 }
