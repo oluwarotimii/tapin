@@ -7,20 +7,19 @@
 // this is built against, and public/vendor/digitalpersona/README.md for
 // where the vendored SDK files came from.
 //
-// PngImage is the capture format used here (not Raw or Intermediate):
-// PngImage decodes with a single Fingerprint.b64UrlTo64() call, while Raw/
-// Compressed require an extra JSON-wrapped unwrap step this hasn't been
-// tested against real hardware yet, and Intermediate is DigitalPersona's
-// own proprietary feature format (not NBIS-compatible, see the doc). A PNG
-// is also easy for a future NBIS-based matching bridge to decode with any
-// image library.
+// Captures in Compressed (WSQ) format — the matching engine (nbis-js,
+// src/server/fingerprintMatch.ts) only accepts WSQ. WSQ samples arrive
+// double-encoded (base64url wrapping a JSON blob wrapping more base64url);
+// the unwrap sequence below is copied from the reference app's
+// sampleAcquired() handler for the Compressed case, not guessed.
 
 declare global {
   interface Window {
     Fingerprint?: {
       WebApi: new () => DigitalPersonaWebApi
-      SampleFormat: { PngImage: number }
+      SampleFormat: { Compressed: number }
       b64UrlTo64: (s: string) => string
+      b64UrlToUtf8: (s: string) => string
     }
   }
 }
@@ -82,7 +81,20 @@ export async function isDigitalPersonaAvailable(): Promise<boolean> {
 
 const CAPTURE_TIMEOUT_MS = 15000
 
-// Starts acquisition, resolves with the first scan as a base64 PNG string
+// Unwraps a Compressed (WSQ) sample per the reference app's sampleAcquired():
+// samples[0].Data is base64url -> b64UrlTo64 -> base64-decode-to-utf8 ->
+// JSON.parse -> .Data is base64url again -> b64UrlTo64 -> actual WSQ bytes.
+function unwrapWsqSample(
+  Fingerprint: NonNullable<Window["Fingerprint"]>,
+  rawSamples: string,
+): string {
+  const samples = JSON.parse(rawSamples) as { Data: string }[]
+  const outer = Fingerprint.b64UrlTo64(samples[0].Data)
+  const inner = JSON.parse(Fingerprint.b64UrlToUtf8(outer)) as { Data: string }
+  return Fingerprint.b64UrlTo64(inner.Data)
+}
+
+// Starts acquisition, resolves with the first scan as a base64 WSQ string
 // (or null on failure/timeout/no reader), then stops acquisition.
 export async function captureDigitalPersonaSample(): Promise<string | null> {
   try {
@@ -105,15 +117,14 @@ export async function captureDigitalPersonaSample(): Promise<string | null> {
 
       sdk.onSamplesAcquired = (e) => {
         try {
-          const samples = JSON.parse(e.samples) as string[]
-          finish(Fingerprint.b64UrlTo64(samples[0]))
+          finish(unwrapWsqSample(Fingerprint, e.samples))
         } catch {
           finish(null)
         }
       }
       sdk.onCommunicationFailed = () => finish(null)
 
-      sdk.startAcquisition(Fingerprint.SampleFormat.PngImage, readers[0]).catch(() => finish(null))
+      sdk.startAcquisition(Fingerprint.SampleFormat.Compressed, readers[0]).catch(() => finish(null))
 
       setTimeout(() => finish(null), CAPTURE_TIMEOUT_MS)
     })
