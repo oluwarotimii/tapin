@@ -1,11 +1,22 @@
-# Roster CSV — students
-#
-# Columns: name,student_id,status
-#   name       required
-#   student_id required, unique (use your LMS/external id)
-#   status     optional (active | inactive), defaults to active
-#
-# Uncomment and edit the example row(s), then run: pnpm db:seed
-#name,student_id,status
-#Maria Santos,2024-001,active
-name,student_id,status
+# Roster CSV — students (generated: 20 students, 3 sessions/week each)
+name,student_id,card_id,status
+Maria Santos,2026-01,CARD-007X81,active
+James Chen,2026-02,CARD-0084XU,active
+Aisha Bello,2026-03,CARD-008CNN,active
+Liam O'Brien,2026-04,CARD-008KDG,active
+Sofia Rossi,2026-05,CARD-008S39,active
+Kwame Mensah,2026-06,CARD-008ZT2,active
+Emma Johnson,2026-07,CARD-0097IV,active
+Noah Kim,2026-08,CARD-009F8O,active
+Priya Patel,2026-09,CARD-009MYH,active
+Lucas Silva,2026-10,CARD-009UOA,active
+Chloe Dubois,2026-11,CARD-00A2E3,active
+Omar Hassan,2026-12,CARD-00AA3W,active
+Grace Nguyen,2026-13,CARD-00AHTP,active
+Ethan Brown,2026-14,CARD-00APJI,active
+Amina Diallo,2026-15,CARD-00AX9B,active
+Daniel Garcia,2026-16,CARD-00B4Z4,active
+Yuki Tanaka,2026-17,CARD-00BCOX,active
+Isabella Costa,2026-18,CARD-00BKEQ,active
+Mohammed Ali,2026-19,CARD-00BS4J,active
+Hannah Schmidt,2026-20,CARD-00BZUC,active

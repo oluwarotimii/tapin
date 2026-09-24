@@ -1,15 +1,62 @@
-# Roster CSV — schedules
-#
-# Columns: student_id,day,start,end,minimum_minutes
-#   day            required (sunday..saturday)
-#   start / end    24h HH:MM tap-in window
-#   minimum_minutes the minimum session length (tap-out rule)
-#
-# Leave student_id EMPTY to set the DEFAULT template — it applies to every
-# student who does not have their own schedule.
-# A student_id (must match a row in students.csv) sets that student's own week.
-#
-# Examples:
-#   default template:  ,monday,08:00,17:00,120
-#   per-student week:  2024-001,monday,08:00,12:00,180
+# Roster CSV — schedules (per-student: 3 x 2h sessions/week)
 student_id,day,start,end,minimum_minutes
+2026-01,monday,08:00,10:00,120
+2026-01,wednesday,13:00,15:00,120
+2026-01,friday,18:00,20:00,120
+2026-02,tuesday,10:30,12:30,120
+2026-02,thursday,15:30,17:30,120
+2026-02,saturday,08:00,10:00,120
+2026-03,monday,13:00,15:00,120
+2026-03,thursday,18:00,20:00,120
+2026-03,saturday,10:30,12:30,120
+2026-04,tuesday,15:30,17:30,120
+2026-04,wednesday,08:00,10:00,120
+2026-04,friday,13:00,15:00,120
+2026-05,monday,18:00,20:00,120
+2026-05,wednesday,10:30,12:30,120
+2026-05,saturday,15:30,17:30,120
+2026-06,tuesday,08:00,10:00,120
+2026-06,thursday,13:00,15:00,120
+2026-06,friday,18:00,20:00,120
+2026-07,monday,10:30,12:30,120
+2026-07,wednesday,15:30,17:30,120
+2026-07,friday,08:00,10:00,120
+2026-08,tuesday,13:00,15:00,120
+2026-08,thursday,18:00,20:00,120
+2026-08,saturday,10:30,12:30,120
+2026-09,monday,15:30,17:30,120
+2026-09,thursday,08:00,10:00,120
+2026-09,saturday,13:00,15:00,120
+2026-10,tuesday,18:00,20:00,120
+2026-10,wednesday,10:30,12:30,120
+2026-10,friday,15:30,17:30,120
+2026-11,monday,08:00,10:00,120
+2026-11,wednesday,13:00,15:00,120
+2026-11,saturday,18:00,20:00,120
+2026-12,tuesday,10:30,12:30,120
+2026-12,thursday,15:30,17:30,120
+2026-12,friday,08:00,10:00,120
+2026-13,monday,13:00,15:00,120
+2026-13,wednesday,18:00,20:00,120
+2026-13,friday,10:30,12:30,120
+2026-14,tuesday,15:30,17:30,120
+2026-14,thursday,08:00,10:00,120
+2026-14,saturday,13:00,15:00,120
+2026-15,monday,18:00,20:00,120
+2026-15,thursday,10:30,12:30,120
+2026-15,saturday,15:30,17:30,120
+2026-16,tuesday,08:00,10:00,120
+2026-16,wednesday,13:00,15:00,120
+2026-16,friday,18:00,20:00,120
+2026-17,monday,10:30,12:30,120
+2026-17,wednesday,15:30,17:30,120
+2026-17,saturday,08:00,10:00,120
+2026-18,tuesday,13:00,15:00,120
+2026-18,thursday,18:00,20:00,120
+2026-18,friday,10:30,12:30,120
+2026-19,monday,15:30,17:30,120
+2026-19,wednesday,08:00,10:00,120
+2026-19,friday,13:00,15:00,120
+2026-20,tuesday,18:00,20:00,120
+2026-20,thursday,10:30,12:30,120
+2026-20,saturday,15:30,17:30,120

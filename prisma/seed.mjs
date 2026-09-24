@@ -62,10 +62,11 @@ async function main() {
   for (const row of studentsCSV) {
     if (!row.name || !row.student_id) continue
     const status = row.status === "inactive" ? "inactive" : "active"
+    const cardId = row.card_id ? row.card_id : null
     await prisma.student.upsert({
       where: { studentId: row.student_id },
-      create: { name: row.name, studentId: row.student_id, status },
-      update: { name: row.name, status },
+      create: { name: row.name, studentId: row.student_id, status, cardId },
+      update: { name: row.name, status, cardId },
     })
     students++
   }
