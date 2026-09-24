@@ -23,7 +23,7 @@ interface StudentWithSchedule {
   cardId: string | null
   schedule: ScheduleDay[]
   session?: { id: string; cardId: string | null; clockedInAt: Date } | null
-  _count?: { fingerprintTemplates: number }
+  fingerprintTemplate?: { id: string } | null
 }
 
 function toStudent(s: StudentWithSchedule): Student {
@@ -40,7 +40,7 @@ function toStudent(s: StudentWithSchedule): Student {
       end: d.end,
       minimumMinutes: d.minimumMinutes,
     })),
-    fingerprintCount: s._count?.fingerprintTemplates,
+    fingerprintCount: s.fingerprintTemplate ? 1 : 0,
   }
 }
 
@@ -50,7 +50,7 @@ export async function getStudents(): Promise<Student[]> {
     include: {
       schedule: true,
       session: true,
-      _count: { select: { fingerprintTemplates: true } },
+      fingerprintTemplate: { select: { id: true } },
     },
     orderBy: { studentId: "asc" },
   })
@@ -63,7 +63,7 @@ export async function getStudentByInternalId(id: string) {
     include: {
       schedule: true,
       session: true,
-      _count: { select: { fingerprintTemplates: true } },
+      fingerprintTemplate: { select: { id: true } },
     },
   })
   return s ? toStudent(s) : null
