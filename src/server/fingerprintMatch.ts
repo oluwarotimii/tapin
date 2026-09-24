@@ -25,29 +25,35 @@ async function getMatcher() {
   return checkDuplicateFingerFromBase64
 }
 
-// 1:N identification: compares the live scan against every enrolled
-// template until a match is found. O(n) in student count — fine at
-// school scale, would need real optimization far beyond that. Returns the
-// external Student.studentId (what tapByStudentId expects), not the
-// internal FK stored on FingerprintTemplate.
-export async function findMatchingStudent(
+export type VerifyResult = "matched" | "no_match" | "not_enrolled"
+
+// 1:1 verification: the caller already knows who they claim to be (picked
+// from a search, not guessed) — compare the live scan against only that
+// student's stored template. O(1) regardless of enrollment size, unlike an
+// earlier 1:N "just place your finger" design this replaced: identifying
+// against every enrolled template doesn't scale (linear latency growth)
+// and gets *less* accurate as the candidate pool grows (more templates
+// compared = more chances of a coincidental match past the threshold).
+export async function verifyStudentFingerprint(
+  externalStudentId: string,
   liveWsqBase64: string,
-): Promise<string | null> {
-  const check = await getMatcher()
-  const templates = await prisma.fingerprintTemplate.findMany({
-    select: { template: true, student: { select: { studentId: true } } },
+): Promise<VerifyResult> {
+  const student = await prisma.student.findUnique({
+    where: { studentId: externalStudentId },
+    select: { fingerprintTemplate: { select: { template: true } } },
   })
-  for (const t of templates) {
-    const enrolledBase64 = Buffer.from(t.template).toString("base64")
-    // checkDuplicateFingerFromBase64 throws (rather than returning false) on
-    // malformed WSQ input — confirmed via a real NBIS decode error, not a
-    // crash in our own code. One bad template (or a corrupt live scan)
-    // must not take down the whole identify request; skip and keep looking.
-    try {
-      if (await check(liveWsqBase64, enrolledBase64)) return t.student.studentId
-    } catch {
-      continue
-    }
+  if (!student?.fingerprintTemplate) return "not_enrolled"
+
+  const check = await getMatcher()
+  const enrolledBase64 = Buffer.from(student.fingerprintTemplate.template).toString(
+    "base64",
+  )
+  // checkDuplicateFingerFromBase64 throws (rather than returning false) on
+  // malformed WSQ input — confirmed via a real NBIS decode error, not a
+  // crash in our own code. A bad live scan must not 500 the request.
+  try {
+    return (await check(liveWsqBase64, enrolledBase64)) ? "matched" : "no_match"
+  } catch {
+    return "no_match"
   }
-  return null
 }

@@ -5,12 +5,11 @@ import { db, type TapResult } from "../store";
 import { reader, type TapEvent } from "../reader";
 import { useReaderStatus, useFingerprintBridgeConnected } from "../hooks";
 import { useHidCapture } from "../useHidCapture";
-import { bridgeIdentify } from "../lib/fingerprintBridge";
 import { tapTag, hexA } from "../tapFormat";
 import FingerprintEnroll from "./FingerprintEnroll";
+import FingerprintScan from "./FingerprintScan";
 
 const CLEAR_DELAY = 2800; // ms before status resets to idle
-const FINGERPRINT_WINDOW_SECONDS = 30; // how long the scanner stays awake per press
 
 const READER_STATUS: Record<string, { label: string; color: string }> = {
   disconnected: { label: "OFFLINE", color: "#ff4d6a" },
@@ -26,8 +25,7 @@ export default function Terminal() {
   const [events, setEvents] = useState<TapEvent[]>([]);
   const [scanning, setScanning] = useState(false);
   const [showEnroll, setShowEnroll] = useState(false);
-  const [fingerprintScanActive, setFingerprintScanActive] = useState(false);
-  const [fingerprintSecondsLeft, setFingerprintSecondsLeft] = useState(0);
+  const [showScan, setShowScan] = useState(false);
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const readerStatus = useReaderStatus();
   const fingerprintBridgeConnected = useFingerprintBridgeConnected();
@@ -53,54 +51,6 @@ export default function Terminal() {
     enabled: readerStatus === "connected",
     onCard: (cardId) => performTap(cardId),
   });
-
-  // On-demand only — the scanner does not sit listening indefinitely.
-  // Pressing the fingerprint button arms it for FINGERPRINT_WINDOW_SECONDS,
-  // then it auto-disarms. Paused while the enroll modal is open — both
-  // capture from the same physical reader, and two concurrent acquisitions
-  // on one device fight each other.
-  const activateFingerprintScan = useCallback(() => {
-    if (readerStatus !== "connected" || showEnroll) return;
-    setFingerprintScanActive(true);
-    setFingerprintSecondsLeft(FINGERPRINT_WINDOW_SECONDS);
-  }, [readerStatus, showEnroll]);
-
-  useEffect(() => {
-    if (!fingerprintScanActive) return;
-    const t = setInterval(() => {
-      setFingerprintSecondsLeft((s) => {
-        if (s <= 1) {
-          setFingerprintScanActive(false);
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-    return () => clearInterval(t);
-  }, [fingerprintScanActive]);
-
-  // Background loop against the fingerprint bridge (docs/fingerprint-
-  // integration.md), only while armed. Blocks on bridgeIdentify() until a
-  // match or timeout, then feeds the result into the same tap-event stream
-  // as card taps.
-  useEffect(() => {
-    if (readerStatus !== "connected" || showEnroll || !fingerprintScanActive) return;
-    let cancelled = false;
-    (async () => {
-      while (!cancelled) {
-        const studentId = await bridgeIdentify();
-        if (cancelled) return;
-        if (studentId) {
-          await reader.submitFingerprintTap(studentId);
-        } else {
-          await new Promise((r) => setTimeout(r, 2000));
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [readerStatus, showEnroll, fingerprintScanActive]);
 
   useEffect(() => {
     return reader.subscribeTaps((ev) => {
@@ -528,28 +478,14 @@ export default function Terminal() {
               listening indefinitely */}
           {fingerprintBridgeConnected && (
             <button
-              onClick={activateFingerprintScan}
-              disabled={fingerprintScanActive}
+              onClick={() => setShowScan(true)}
               className="flex items-center gap-2 px-5 py-2.5 rounded-full transition-all"
               style={{
-                background: fingerprintScanActive
-                  ? "rgba(0,229,160,0.14)"
-                  : "rgba(0,229,160,0.06)",
-                border: `1px solid ${
-                  fingerprintScanActive
-                    ? "rgba(0,229,160,0.5)"
-                    : "rgba(0,229,160,0.25)"
-                }`,
-                cursor: fingerprintScanActive ? "default" : "pointer",
+                background: "rgba(0,229,160,0.06)",
+                border: "1px solid rgba(0,229,160,0.25)",
               }}
             >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 18 18"
-                fill="none"
-                className={fingerprintScanActive ? "animate-pulse" : undefined}
-              >
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
                 <path
                   d="M9 2.5a6 6 0 0 1 6 6v1.5"
                   stroke="#00e5a0"
@@ -582,9 +518,7 @@ export default function Terminal() {
                 />
               </svg>
               <span className="mono text-sm" style={{ color: "#00e5a0" }}>
-                {fingerprintScanActive
-                  ? `Scanning… ${fingerprintSecondsLeft}s`
-                  : "Scan Fingerprint"}
+                Scan Fingerprint
               </span>
             </button>
           )}
@@ -716,6 +650,7 @@ export default function Terminal() {
       </div>
 
       {showEnroll && <FingerprintEnroll onClose={() => setShowEnroll(false)} />}
+      {showScan && <FingerprintScan onClose={() => setShowScan(false)} />}
     </div>
   );
 }
