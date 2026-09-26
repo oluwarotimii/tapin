@@ -66,12 +66,26 @@ function ensureSdkLoaded(): Promise<void> {
   return loadPromise
 }
 
+// A fresh `new Fingerprint.WebApi()` per call was the bug behind "the
+// scanner won't wake up again until the page is refreshed": each instance
+// opens its own connection handshake with the Lite Client, and abandoned
+// ones (e.g. after a capture timeout) were never torn down, leaving the
+// device looking busy to the next attempt. One instance, reused for the
+// whole page lifetime — matches how the reference app does it.
+let sdkInstance: DigitalPersonaWebApi | null = null
+
+async function getSdk(): Promise<DigitalPersonaWebApi | null> {
+  await ensureSdkLoaded()
+  const Fingerprint = window.Fingerprint
+  if (!Fingerprint) return null
+  if (!sdkInstance) sdkInstance = new Fingerprint.WebApi()
+  return sdkInstance
+}
+
 export async function isDigitalPersonaAvailable(): Promise<boolean> {
   try {
-    await ensureSdkLoaded()
-    const Fingerprint = window.Fingerprint
-    if (!Fingerprint) return false
-    const sdk = new Fingerprint.WebApi()
+    const sdk = await getSdk()
+    if (!sdk) return false
     const readers = await sdk.enumerateDevices()
     return Array.isArray(readers) && readers.length > 0
   } catch {
@@ -96,24 +110,31 @@ function unwrapWsqSample(
   return Fingerprint.b64UrlTo64(inner.Data)
 }
 
-// Starts acquisition, resolves with the first scan as a base64 WSQ string
-// (or null on failure/timeout/no reader), then stops acquisition.
-export async function captureDigitalPersonaSample(): Promise<string | null> {
-  try {
-    await ensureSdkLoaded()
-    const Fingerprint = window.Fingerprint
-    if (!Fingerprint) return null
+// Serializes captures on the shared singleton `sdk` — two overlapping
+// startAcquisition calls on one physical device is exactly the kind of
+// thing that left it stuck before, so a second call now waits for the
+// first to fully finish (including its stopAcquisition) rather than racing it.
+let captureLock: Promise<void> = Promise.resolve()
 
-    const sdk = new Fingerprint.WebApi()
+async function runCapture(): Promise<string | null> {
+  try {
+    const sdk = await getSdk()
+    if (!sdk) return null
+    const Fingerprint = window.Fingerprint!
+
     const readers = await sdk.enumerateDevices()
     if (!readers.length) return null
 
     return await new Promise<string | null>((resolve) => {
       let settled = false
-      const finish = (value: string | null) => {
+      const finish = async (value: string | null) => {
         if (settled) return
         settled = true
-        sdk.stopAcquisition().catch(() => {})
+        try {
+          await sdk.stopAcquisition()
+        } catch {
+          // best effort — device may already be stopped
+        }
         resolve(value)
       }
 
@@ -133,4 +154,17 @@ export async function captureDigitalPersonaSample(): Promise<string | null> {
   } catch {
     return null
   }
+}
+
+// Starts acquisition, resolves with the first scan as a base64 WSQ string
+// (or null on failure/timeout/no reader), then stops acquisition — fully
+// awaited before resolving, so the device is guaranteed free for whatever
+// calls this next.
+export function captureDigitalPersonaSample(): Promise<string | null> {
+  const result = captureLock.then(runCapture, runCapture)
+  captureLock = result.then(
+    () => undefined,
+    () => undefined,
+  )
+  return result
 }
