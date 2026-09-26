@@ -6,6 +6,7 @@ import { reader, type TapEvent } from "../reader";
 import { useReaderStatus, useFingerprintBridgeConnected } from "../hooks";
 import { useHidCapture } from "../useHidCapture";
 import { tapTag, hexA } from "../tapFormat";
+import type { Student } from "../lib/types";
 import FingerprintEnroll from "./FingerprintEnroll";
 import FingerprintScan from "./FingerprintScan";
 
@@ -25,7 +26,9 @@ export default function Terminal() {
   const [events, setEvents] = useState<TapEvent[]>([]);
   const [scanning, setScanning] = useState(false);
   const [showEnroll, setShowEnroll] = useState(false);
-  const [showScan, setShowScan] = useState(false);
+  const [fingerprintTarget, setFingerprintTarget] = useState<Student | null>(null);
+  const [codeError, setCodeError] = useState("");
+  const codeErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const readerStatus = useReaderStatus();
   const fingerprintBridgeConnected = useFingerprintBridgeConnected();
@@ -47,9 +50,28 @@ export default function Terminal() {
     [scanning, readerStatus],
   );
 
-  const { inputRef, handleKeyDown } = useHidCapture({
+  // A 4-digit code looks up the student directly (school IDs are always 4
+  // digits) and opens the fingerprint scan — no search step, no extra
+  // button press. Card swipes ("CARD-..." — always starts with a letter)
+  // still go through the same input, masked, terminated by Enter, exactly
+  // as before; see useHidCapture.ts for the disambiguation.
+  const handleCode = useCallback((code: string) => {
+    const student = db.getStudents().find((s) => s.studentId === code);
+    if (!student) {
+      if (codeErrorTimer.current) clearTimeout(codeErrorTimer.current);
+      setCodeError(`No student found with ID ${code}`);
+      codeErrorTimer.current = setTimeout(() => setCodeError(""), 3000);
+      return;
+    }
+    setCodeError("");
+    setFingerprintTarget(student);
+  }, []);
+
+  const { inputRef, handleKeyDown, displayValue } = useHidCapture({
     enabled: readerStatus === "connected",
     onCard: (cardId) => performTap(cardId),
+    onCode: handleCode,
+    codeLength: 4,
   });
 
   useEffect(() => {
@@ -110,18 +132,6 @@ export default function Terminal() {
         }}
       />
 
-      {/* hidden HID card entry — never rendered/shown; captures dongle input */}
-      <input
-        ref={inputRef}
-        aria-hidden="true"
-        tabIndex={-1}
-        autoComplete="off"
-        autoCapitalize="off"
-        autoCorrect="off"
-        spellCheck={false}
-        className="sr-only"
-        onKeyDown={handleKeyDown}
-      />
       {/* grid */}
       <div
         className="fixed inset-0 pointer-events-none"
@@ -356,80 +366,37 @@ export default function Terminal() {
                 </svg>
               ) : (
                 <>
-                  {/* NFC icon */}
-                  <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
-                    <rect
-                      x="6"
-                      y="6"
-                      width="13"
-                      height="13"
-                      rx="2.5"
+                  {/* fingerprint icon */}
+                  <svg width="44" height="44" viewBox="0 0 18 18" fill="none">
+                    <path
+                      d="M9 2.5a6 6 0 0 1 6 6v1.5"
                       stroke={statusColor}
-                      strokeWidth="1.5"
+                      strokeWidth="1.3"
+                      strokeLinecap="round"
                     />
-                    <rect
-                      x="25"
-                      y="6"
-                      width="13"
-                      height="13"
-                      rx="2.5"
+                    <path
+                      d="M9 4.5a4 4 0 0 1 4 4v2"
                       stroke={statusColor}
-                      strokeWidth="1.5"
-                      opacity="0.45"
+                      strokeWidth="1.3"
+                      strokeLinecap="round"
                     />
-                    <rect
-                      x="6"
-                      y="25"
-                      width="13"
-                      height="13"
-                      rx="2.5"
+                    <path
+                      d="M3 9a6 6 0 0 1 2.5-4.9"
                       stroke={statusColor}
-                      strokeWidth="1.5"
-                      opacity="0.45"
+                      strokeWidth="1.3"
+                      strokeLinecap="round"
                     />
-                    <rect
-                      x="29"
-                      y="29"
-                      width="5"
-                      height="5"
-                      rx="1"
-                      fill={statusColor}
+                    <path
+                      d="M9 6.5a1.5 1.5 0 0 1 1.5 1.5v2.5a3 3 0 0 1-3 3"
+                      stroke={statusColor}
+                      strokeWidth="1.3"
+                      strokeLinecap="round"
                     />
-                    <rect
-                      x="25"
-                      y="25"
-                      width="5"
-                      height="5"
-                      rx="1"
-                      fill={statusColor}
-                      opacity="0.4"
-                    />
-                    <rect
-                      x="33"
-                      y="25"
-                      width="5"
-                      height="5"
-                      rx="1"
-                      fill={statusColor}
-                      opacity="0.4"
-                    />
-                    <rect
-                      x="25"
-                      y="33"
-                      width="5"
-                      height="5"
-                      rx="1"
-                      fill={statusColor}
-                      opacity="0.4"
-                    />
-                    <rect
-                      x="33"
-                      y="33"
-                      width="5"
-                      height="5"
-                      rx="1"
-                      fill={statusColor}
-                      opacity="0.4"
+                    <path
+                      d="M5.2 5.8A4 4 0 0 0 5 8.5v2a5 5 0 0 0 1.2 3.2"
+                      stroke={statusColor}
+                      strokeWidth="1.3"
+                      strokeLinecap="round"
                     />
                   </svg>
                   <span
@@ -440,7 +407,7 @@ export default function Terminal() {
                       ? "READER OFFLINE"
                       : lastTap
                         ? "TAP AGAIN"
-                        : "TAP CARD"}
+                        : "TAP OR TYPE ID"}
                   </span>
                 </>
               )}
@@ -468,60 +435,58 @@ export default function Terminal() {
               <div className="mono text-sm" style={{ color: "#2e3540" }}>
                 {readerStatus !== "connected"
                   ? "reader offline"
-                  : "hold card near reader"}
+                  : fingerprintBridgeConnected
+                    ? "tap your card, or type your 4-digit ID below"
+                    : "hold card near reader"}
               </div>
             )}
           </div>
 
-          {/* fingerprint scan trigger — on-demand only, armed for
-              FINGERPRINT_WINDOW_SECONDS per press so the scanner isn't
-              listening indefinitely */}
-          {fingerprintBridgeConnected && (
-            <button
-              onClick={() => setShowScan(true)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-full transition-all"
-              style={{
-                background: "rgba(0,229,160,0.06)",
-                border: "1px solid rgba(0,229,160,0.25)",
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <path
-                  d="M9 2.5a6 6 0 0 1 6 6v1.5"
-                  stroke="#00e5a0"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-                <path
-                  d="M9 4.5a4 4 0 0 1 4 4v2"
-                  stroke="#00e5a0"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-                <path
-                  d="M3 9a6 6 0 0 1 2.5-4.9"
-                  stroke="#00e5a0"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-                <path
-                  d="M9 6.5a1.5 1.5 0 0 1 1.5 1.5v2.5a3 3 0 0 1-3 3"
-                  stroke="#00e5a0"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-                <path
-                  d="M5.2 5.8A4 4 0 0 0 5 8.5v2a5 5 0 0 0 1.2 3.2"
-                  stroke="#00e5a0"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-              <span className="mono text-sm" style={{ color: "#00e5a0" }}>
-                Scan Fingerprint
+          {/* Always-rendered — this is the SAME input the HID card reader
+              feeds (useHidCapture.ts tells the two apart by first
+              keystroke), so it must exist even when there's no fingerprint
+              bridge, or card taps would break. Only the code-entry framing
+              (hint text, border) is fingerprint-bridge-conditional. */}
+          <div className="flex flex-col items-center gap-2">
+            <input
+              ref={inputRef}
+              value={displayValue}
+              readOnly
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              onKeyDown={handleKeyDown}
+              placeholder={fingerprintBridgeConnected ? "– – – –" : undefined}
+              aria-hidden={!fingerprintBridgeConnected}
+              tabIndex={fingerprintBridgeConnected ? 0 : -1}
+              className={
+                fingerprintBridgeConnected
+                  ? "mono text-center text-2xl tracking-[0.4em] rounded-xl outline-none"
+                  : "sr-only"
+              }
+              style={
+                fingerprintBridgeConnected
+                  ? {
+                      width: 220,
+                      padding: "10px 0",
+                      background: "#111418",
+                      border: `1px solid ${codeError ? "rgba(255,77,106,0.5)" : "#1e2530"}`,
+                      color: "#dde2ec",
+                      caretColor: "#00e5a0",
+                    }
+                  : undefined
+              }
+            />
+            {fingerprintBridgeConnected && (
+              <span
+                className="mono text-xs"
+                style={{ color: codeError ? "#ff4d6a" : "#56627a" }}
+              >
+                {codeError || "type your 4-digit ID to verify by fingerprint"}
               </span>
-            </button>
-          )}
+            )}
+          </div>
         </div>
 
         {/* ── right panel ── */}
@@ -650,7 +615,12 @@ export default function Terminal() {
       </div>
 
       {showEnroll && <FingerprintEnroll onClose={() => setShowEnroll(false)} />}
-      {showScan && <FingerprintScan onClose={() => setShowScan(false)} />}
+      {fingerprintTarget && (
+        <FingerprintScan
+          student={fingerprintTarget}
+          onClose={() => setFingerprintTarget(null)}
+        />
+      )}
     </div>
   );
 }

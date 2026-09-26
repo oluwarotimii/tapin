@@ -3,31 +3,50 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * Captures card reads from an OTG RFID dongle that presents as a USB
- * keyboard (HID). The dongle "types" the card identifier followed by an
- * Enter key press. Everything is swallowed into an invisible input so the
- * card detail is never rendered on screen.
+ * Captures keystrokes from a single always-focused input serving two
+ * sources at once:
+ *  - An OTG RFID dongle presenting as a USB keyboard (HID). It "types" the
+ *    card identifier followed by Enter. Card IDs always start with a
+ *    letter ("CARD-...", see generateCardId()), so the first keystroke
+ *    alone identifies this as a card read — buffered invisibly (masked on
+ *    screen) until Enter, same as before.
+ *  - A student typing their numeric ID on a physical keyboard. The first
+ *    keystroke being a digit identifies this as a code entry — shown
+ *    plainly on screen as typed, auto-submitted the moment it reaches
+ *    codeLength characters (no Enter needed).
  */
 
 export interface HidCaptureOptions {
   enabled: boolean;
   onCard: (cardId: string) => void;
-  /** Optional terminator that ends a read. Defaults to Enter. */
+  /** Fires the moment a digit-only buffer reaches codeLength. */
+  onCode?: (code: string) => void;
+  /** Digits required before onCode fires. Defaults to 4. */
+  codeLength?: number;
+  /** Optional terminator that ends a card read. Defaults to Enter. */
   terminator?: string;
-  /** Min characters before a scan can be accepted (guards against stray keys). */
+  /** Min characters before a card read can be accepted (guards against stray keys). */
   minLength?: number;
 }
+
+type Mode = "idle" | "code" | "card";
 
 export function useHidCapture({
   enabled,
   onCard,
+  onCode,
+  codeLength = 4,
   terminator = "Enter",
   minLength = 4,
 }: HidCaptureOptions) {
   const inputRef = useRef<HTMLInputElement>(null);
   const bufferRef = useRef("");
+  const modeRef = useRef<Mode>("idle");
+  const [displayValue, setDisplayValue] = useState("");
   const onCardRef = useRef(onCard);
   onCardRef.current = onCard;
+  const onCodeRef = useRef(onCode);
+  onCodeRef.current = onCode;
 
   const [armed, setArmed] = useState(enabled);
 
@@ -38,7 +57,7 @@ export function useHidCapture({
 
   const refocus = () => {
     // Restore the entry field whenever the user clicks anywhere else so a
-    // tap is never dropped.
+    // tap/keystroke is never dropped.
     if (document.activeElement !== inputRef.current) {
       inputRef.current?.focus({ preventScroll: true });
     }
@@ -54,30 +73,59 @@ export function useHidCapture({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [armed]);
 
+  function reset() {
+    bufferRef.current = "";
+    modeRef.current = "idle";
+    setDisplayValue("");
+  }
+
+  function render() {
+    setDisplayValue(
+      modeRef.current === "card"
+        ? "•".repeat(bufferRef.current.length)
+        : bufferRef.current,
+    );
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!armed) return;
     if (e.key === terminator) {
-      const cardId = bufferRef.current;
-      bufferRef.current = "";
-      if (cardId && cardId.length >= minLength) {
-        onCardRef.current(cardId);
-        return;
-      }
-      if (cardId) {
-        // Non-blank but too short: treat as noise.
-        bufferRef.current = "";
+      const value = bufferRef.current;
+      const mode = modeRef.current;
+      reset();
+      if (mode === "card" && value.length >= minLength) {
+        onCardRef.current(value);
       }
       e.preventDefault();
       return;
     }
     if (e.key === "Backspace") {
       bufferRef.current = bufferRef.current.slice(0, -1);
+      if (!bufferRef.current) modeRef.current = "idle";
+      render();
       e.preventDefault();
-    } else if (e.key.length === 1) {
+      return;
+    }
+    if (e.key.length === 1) {
+      if (modeRef.current === "idle") {
+        modeRef.current = /^[0-9]$/.test(e.key) ? "code" : "card";
+      }
       bufferRef.current += e.key;
       e.preventDefault();
+
+      if (
+        modeRef.current === "code" &&
+        onCodeRef.current &&
+        bufferRef.current.length === codeLength
+      ) {
+        const code = bufferRef.current;
+        reset();
+        onCodeRef.current(code);
+        return;
+      }
+      render();
     }
   };
 
-  return { inputRef, handleKeyDown };
+  return { inputRef, handleKeyDown, displayValue, resetInput: reset };
 }

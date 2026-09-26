@@ -1,69 +1,57 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { db } from "../store"
 import { reader } from "../reader"
 import type { Student } from "../lib/types"
 import { verifyFingerprint } from "../lib/fingerprintBridge"
 
-type Step = "search" | "scanning" | "success" | "error"
+type Step = "scanning" | "success" | "error"
 
 const SCAN_WINDOW_SECONDS = 30
 
-// Tap-time fingerprint check for the kiosk: search your own name/ID, then
-// scan to verify it's you (1:1), not "place your finger and we'll guess
-// who you are" — see src/server/fingerprintMatch.ts for why. On a match
-// this feeds the same tap pipeline as a card tap; Terminal's own status
-// display shows the clock-in/out result, so this modal just closes.
-export default function FingerprintScan({ onClose }: { onClose: () => void }) {
-  const [query, setQuery] = useState("")
-  const [selected, setSelected] = useState<Student | null>(null)
-  const [step, setStep] = useState<Step>("search")
+// Tap-time fingerprint check for the kiosk. The caller has already
+// resolved which student this is (Terminal.tsx's 4-digit code entry) — this
+// just scans and verifies it's them (1:1), not "place your finger and
+// we'll guess who you are" — see src/server/fingerprintMatch.ts for why.
+// On a match this feeds the same tap pipeline as a card tap; Terminal's own
+// status display shows the clock-in/out result, so this modal just closes.
+export default function FingerprintScan({
+  student,
+  onClose,
+}: {
+  student: Student
+  onClose: () => void
+}) {
+  const [step, setStep] = useState<Step>("scanning")
   const [message, setMessage] = useState("")
   const [secondsLeft, setSecondsLeft] = useState(SCAN_WINDOW_SECONDS)
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  const students = db.getStudents().filter((s) => s.status === "active")
-  const q = query.trim().toLowerCase()
-  const results =
-    q.length >= 2
-      ? students
-          .filter(
-            (s) =>
-              s.name.toLowerCase().includes(q) ||
-              s.studentId.toLowerCase().includes(q),
-          )
-          .slice(0, 8)
-      : []
+  const startedRef = useRef(false)
 
   useEffect(() => {
+    if (startedRef.current) return
+    startedRef.current = true
+    scan()
     return () => {
       if (countdownRef.current) clearInterval(countdownRef.current)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function pick(s: Student) {
-    setSelected(s)
-    setMessage("")
-    await scan(s)
-  }
-
-  async function scan(student: Student | null) {
-    const target = student ?? selected
-    if (!target) return
+  async function scan() {
     setStep("scanning")
     setSecondsLeft(SCAN_WINDOW_SECONDS)
     countdownRef.current = setInterval(() => {
       setSecondsLeft((s) => (s > 1 ? s - 1 : 1))
     }, 1000)
 
-    const outcome = await verifyFingerprint(target.studentId)
+    const outcome = await verifyFingerprint(student.studentId)
     if (countdownRef.current) clearInterval(countdownRef.current)
 
     if (outcome === "matched") {
-      await reader.submitFingerprintTap(target.studentId)
+      await reader.submitFingerprintTap(student.studentId)
       setStep("success")
-      setMessage(`Verified — welcome, ${target.name}`)
+      setMessage(`Verified — welcome, ${student.name}`)
       setTimeout(onClose, 1200)
       return
     }
@@ -71,7 +59,7 @@ export default function FingerprintScan({ onClose }: { onClose: () => void }) {
     setStep("error")
     if (outcome === "not_enrolled") {
       setMessage(
-        `${target.name} has no fingerprint enrolled yet — use "Enroll Fingerprint" first`,
+        `${student.name} has no fingerprint enrolled yet — use "Enroll Fingerprint" first`,
       )
     } else if (outcome === "no_match") {
       setMessage("Fingerprint didn't match — try again, or use your card instead")
@@ -93,67 +81,18 @@ export default function FingerprintScan({ onClose }: { onClose: () => void }) {
       >
         <div className="flex items-center justify-between mb-4">
           <div className="text-sm font-semibold" style={{ color: "#dde2ec" }}>
-            Scan Fingerprint
+            Fingerprint Check
           </div>
           <button
             onClick={onClose}
             className="text-xs font-mono px-1"
             style={{ color: "#56627a" }}
           >
-            close
+            cancel
           </button>
         </div>
 
-        {step === "search" && (
-          <>
-            <input
-              autoFocus
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Type your name or student ID…"
-              className="w-full rounded-lg px-3 py-2.5 text-sm font-mono outline-none mb-3"
-              style={{
-                background: "#181c22",
-                border: "1px solid #1e2530",
-                color: "#dde2ec",
-                caretColor: "#00e5a0",
-              }}
-            />
-            <div className="flex flex-col gap-1 max-h-52 overflow-y-auto">
-              {q.length < 2 ? (
-                <div
-                  className="text-xs font-mono py-4 text-center"
-                  style={{ color: "#2e3540" }}
-                >
-                  keep typing…
-                </div>
-              ) : results.length === 0 ? (
-                <div
-                  className="text-xs font-mono py-4 text-center"
-                  style={{ color: "#2e3540" }}
-                >
-                  no match
-                </div>
-              ) : (
-                results.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => pick(s)}
-                    className="text-left px-3 py-2 rounded-lg text-sm transition-all"
-                    style={{ background: "#181c22", color: "#dde2ec" }}
-                  >
-                    {s.name}{" "}
-                    <span className="font-mono text-xs" style={{ color: "#56627a" }}>
-                      · {s.studentId}
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          </>
-        )}
-
-        {step === "scanning" && selected && (
+        {step === "scanning" && (
           <div className="flex flex-col items-center gap-3 py-6">
             <svg
               className="animate-pulse"
@@ -189,7 +128,7 @@ export default function FingerprintScan({ onClose }: { onClose: () => void }) {
             </svg>
             <div className="text-sm text-center" style={{ color: "#dde2ec" }}>
               Place your finger on the reader,{" "}
-              <span style={{ color: "#00e5a0" }}>{selected.name}</span>
+              <span style={{ color: "#00e5a0" }}>{student.name}</span>
             </div>
             <div className="text-xs font-mono" style={{ color: "#56627a" }}>
               {secondsLeft}s remaining
@@ -214,29 +153,23 @@ export default function FingerprintScan({ onClose }: { onClose: () => void }) {
               {message}
             </div>
             <div className="flex items-center gap-3">
-              {selected && (
-                <button
-                  onClick={() => scan(selected)}
-                  className="px-4 py-2 rounded-lg text-xs font-mono"
-                  style={{
-                    background: "rgba(255,77,106,0.12)",
-                    color: "#ff4d6a",
-                    border: "1px solid rgba(255,77,106,0.3)",
-                  }}
-                >
-                  Try again
-                </button>
-              )}
               <button
-                onClick={() => {
-                  setSelected(null)
-                  setQuery("")
-                  setStep("search")
+                onClick={scan}
+                className="px-4 py-2 rounded-lg text-xs font-mono"
+                style={{
+                  background: "rgba(255,77,106,0.12)",
+                  color: "#ff4d6a",
+                  border: "1px solid rgba(255,77,106,0.3)",
                 }}
+              >
+                Try again
+              </button>
+              <button
+                onClick={onClose}
                 className="text-xs font-mono"
                 style={{ color: "#56627a" }}
               >
-                search again
+                cancel
               </button>
             </div>
           </div>
