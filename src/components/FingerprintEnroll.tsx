@@ -4,6 +4,7 @@ import { useState } from "react"
 import { db } from "../store"
 import type { Student } from "../lib/types"
 import { bridgeCapture } from "../lib/fingerprintBridge"
+import { useFingerprintBridgeConnected } from "../hooks"
 
 type Step = "search" | "confirm" | "scanning" | "success" | "error"
 
@@ -14,6 +15,7 @@ export default function FingerprintEnroll({ onClose }: { onClose: () => void }) 
   const [selected, setSelected] = useState<Student | null>(null)
   const [step, setStep] = useState<Step>("search")
   const [message, setMessage] = useState("")
+  const bridgeConnected = useFingerprintBridgeConnected()
 
   const students = db.getStudents().filter((s) => s.status === "active")
   const q = query.trim().toLowerCase()
@@ -36,6 +38,11 @@ export default function FingerprintEnroll({ onClose }: { onClose: () => void }) 
 
   async function scan() {
     if (!selected) return
+    if (!bridgeConnected) {
+      setStep("error")
+      setMessage("Fingerprint scanner not connected")
+      return
+    }
     setStep("scanning")
     const template = await bridgeCapture()
     if (!template) {

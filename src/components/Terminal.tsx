@@ -265,39 +265,37 @@ export default function Terminal() {
           <span className="mono text-xs" style={{ color: "#56627a" }}>
             {dateDisplay}
           </span>
-          {fingerprintBridgeConnected && (
-            <button
-              onClick={() => setShowEnroll(true)}
-              className="hidden sm:flex items-center gap-1.5 mono text-xs px-3 py-1 rounded-full transition-all"
-              style={{
-                background: "rgba(0,229,160,0.08)",
-                color: "#00e5a0",
-                border: "1px solid rgba(0,229,160,0.2)",
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 18 18" fill="none">
-                <path
-                  d="M9 2.5a6 6 0 0 1 6 6v1.5"
-                  stroke="#00e5a0"
+          <button
+            onClick={() => setShowEnroll(true)}
+            className="hidden sm:flex items-center gap-1.5 mono text-xs px-3 py-1 rounded-full transition-all"
+            style={{
+              background: "rgba(0,229,160,0.08)",
+              color: "#00e5a0",
+              border: "1px solid rgba(0,229,160,0.2)",
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 18 18" fill="none">
+              <path
+                d="M9 2.5a6 6 0 0 1 6 6v1.5"
+                stroke="#00e5a0"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+              <path
+                d="M9 6.5a1.5 1.5 0 0 1 1.5 1.5v2.5a3 3 0 0 1-3 3"
+                stroke="#00e5a0"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+              <path
+                d="M5.2 5.8A4 4 0 0 0 5 8.5v2a5 5 0 0 0 1.2 3.2"
+                stroke="#00e5a0"
                   strokeWidth="1.5"
                   strokeLinecap="round"
                 />
-                <path
-                  d="M9 6.5a1.5 1.5 0 0 1 1.5 1.5v2.5a3 3 0 0 1-3 3"
-                  stroke="#00e5a0"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-                <path
-                  d="M5.2 5.8A4 4 0 0 0 5 8.5v2a5 5 0 0 0 1.2 3.2"
-                  stroke="#00e5a0"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-              Enroll Fingerprint
-            </button>
-          )}
+            </svg>
+            Enroll Fingerprint
+          </button>
         </div>
       </div>
 
