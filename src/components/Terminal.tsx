@@ -55,17 +55,25 @@ export default function Terminal() {
   // button press. Card swipes ("CARD-..." — always starts with a letter)
   // still go through the same input, masked, terminated by Enter, exactly
   // as before; see useHidCapture.ts for the disambiguation.
-  const handleCode = useCallback((code: string) => {
-    const student = db.getStudents().find((s) => s.studentId === code);
-    if (!student) {
+  const handleCode = useCallback(
+    (code: string) => {
       if (codeErrorTimer.current) clearTimeout(codeErrorTimer.current);
-      setCodeError(`No student found with ID ${code}`);
-      codeErrorTimer.current = setTimeout(() => setCodeError(""), 3000);
-      return;
-    }
-    setCodeError("");
-    setFingerprintTarget(student);
-  }, []);
+      if (!fingerprintBridgeConnected) {
+        setCodeError("Fingerprint scanner not connected");
+        codeErrorTimer.current = setTimeout(() => setCodeError(""), 3000);
+        return;
+      }
+      const student = db.getStudents().find((s) => s.studentId === code);
+      if (!student) {
+        setCodeError(`No student found with ID ${code}`);
+        codeErrorTimer.current = setTimeout(() => setCodeError(""), 3000);
+        return;
+      }
+      setCodeError("");
+      setFingerprintTarget(student);
+    },
+    [fingerprintBridgeConnected],
+  );
 
   const { inputRef, handleKeyDown, displayValue } = useHidCapture({
     enabled: readerStatus === "connected",
@@ -442,11 +450,13 @@ export default function Terminal() {
             )}
           </div>
 
-          {/* Always-rendered — this is the SAME input the HID card reader
+          {/* Always visible — this is the SAME input the HID card reader
               feeds (useHidCapture.ts tells the two apart by first
-              keystroke), so it must exist even when there's no fingerprint
-              bridge, or card taps would break. Only the code-entry framing
-              (hint text, border) is fingerprint-bridge-conditional. */}
+              keystroke), so it must exist and stay focused regardless of
+              fingerprint bridge status, or card taps would break. Typed
+              digits and errors always show here too — silently hiding this
+              box whenever no bridge was connected used to make typing look
+              broken with zero feedback either way. */}
           <div className="flex flex-col items-center gap-2">
             <input
               ref={inputRef}
@@ -457,35 +467,26 @@ export default function Terminal() {
               autoCorrect="off"
               spellCheck={false}
               onKeyDown={handleKeyDown}
-              placeholder={fingerprintBridgeConnected ? "– – – –" : undefined}
-              aria-hidden={!fingerprintBridgeConnected}
-              tabIndex={fingerprintBridgeConnected ? 0 : -1}
-              className={
-                fingerprintBridgeConnected
-                  ? "mono text-center text-2xl tracking-[0.4em] rounded-xl outline-none"
-                  : "sr-only"
-              }
-              style={
-                fingerprintBridgeConnected
-                  ? {
-                      width: 220,
-                      padding: "10px 0",
-                      background: "#111418",
-                      border: `1px solid ${codeError ? "rgba(255,77,106,0.5)" : "#1e2530"}`,
-                      color: "#dde2ec",
-                      caretColor: "#00e5a0",
-                    }
-                  : undefined
-              }
+              placeholder="– – – –"
+              className="mono text-center text-2xl tracking-[0.4em] rounded-xl outline-none"
+              style={{
+                width: 220,
+                padding: "10px 0",
+                background: "#111418",
+                border: `1px solid ${codeError ? "rgba(255,77,106,0.5)" : "#1e2530"}`,
+                color: "#dde2ec",
+                caretColor: "#00e5a0",
+              }}
             />
-            {fingerprintBridgeConnected && (
-              <span
-                className="mono text-xs"
-                style={{ color: codeError ? "#ff4d6a" : "#56627a" }}
-              >
-                {codeError || "type your 4-digit ID to verify by fingerprint"}
-              </span>
-            )}
+            <span
+              className="mono text-xs"
+              style={{ color: codeError ? "#ff4d6a" : "#56627a" }}
+            >
+              {codeError ||
+                (fingerprintBridgeConnected
+                  ? "type your 4-digit ID to verify by fingerprint"
+                  : "fingerprint scanner not connected")}
+            </span>
           </div>
         </div>
 
