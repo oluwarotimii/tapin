@@ -11,6 +11,7 @@ export type AdminPage =
   | "log"
   | "devices"
   | "keys"
+  | "settings"
 
 interface AdminShellProps {
   page: AdminPage
@@ -281,6 +282,21 @@ const NAV: { id: AdminPage; label: string; icon: ReactNode }[] = [
         />
         <path
           d="M8 10h5.5v2M11.5 10V7M9 8.5h.5"
+          stroke="currentColor"
+          strokeWidth="1.25"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.25" />
+        <path
+          d="M8 4v3M8 9v3M4 8h3M9 8h3"
           stroke="currentColor"
           strokeWidth="1.25"
           strokeLinecap="round"

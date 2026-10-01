@@ -5,6 +5,7 @@ import { db, type TapResult } from "../store";
 import { reader, type TapEvent } from "../reader";
 import { useReaderStatus, useFingerprintBridgeConnected } from "../hooks";
 import { useHidCapture } from "../useHidCapture";
+import { useAppSettings } from "../hooks/useAppSettings";
 import { tapTag, hexA } from "../tapFormat";
 import type { Student } from "../lib/types";
 import FingerprintEnroll from "./FingerprintEnroll";
@@ -32,6 +33,9 @@ export default function Terminal() {
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const readerStatus = useReaderStatus();
   const fingerprintBridgeConnected = useFingerprintBridgeConnected();
+  const settings = useAppSettings();
+  const cardEnabled = settings.cardEnabled;
+  const fingerprintEnabled = settings.fingerprintEnabled;
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -42,12 +46,13 @@ export default function Terminal() {
   // is kept hidden — only the outcome is shown.
   const performTap = useCallback(
     async (cardId: string) => {
+      if (!cardEnabled) return;
       if (scanning || readerStatus !== "connected") return;
       setScanning(true);
       await reader.submitCardTap(cardId);
       setScanning(false);
     },
-    [scanning, readerStatus],
+    [cardEnabled, scanning, readerStatus],
   );
 
   // A 4-digit code looks up the student directly (school IDs are always 4
@@ -57,6 +62,7 @@ export default function Terminal() {
   // as before; see useHidCapture.ts for the disambiguation.
   const handleCode = useCallback(
     (code: string) => {
+      if (!fingerprintEnabled) return;
       if (codeErrorTimer.current) clearTimeout(codeErrorTimer.current);
       if (!fingerprintBridgeConnected) {
         setCodeError("Fingerprint scanner not connected");
@@ -72,11 +78,11 @@ export default function Terminal() {
       setCodeError("");
       setFingerprintTarget(student);
     },
-    [fingerprintBridgeConnected],
+    [fingerprintEnabled, fingerprintBridgeConnected],
   );
 
   const { inputRef, handleKeyDown, displayValue } = useHidCapture({
-    enabled: readerStatus === "connected",
+    enabled: readerStatus === "connected" && (cardEnabled || fingerprintEnabled),
     onCard: (cardId) => performTap(cardId),
     onCode: handleCode,
     codeLength: 4,
@@ -265,37 +271,39 @@ export default function Terminal() {
           <span className="mono text-xs" style={{ color: "#56627a" }}>
             {dateDisplay}
           </span>
-          <button
-            onClick={() => setShowEnroll(true)}
-            className="hidden sm:flex items-center gap-1.5 mono text-xs px-3 py-1 rounded-full transition-all"
-            style={{
-              background: "rgba(0,229,160,0.08)",
-              color: "#00e5a0",
-              border: "1px solid rgba(0,229,160,0.2)",
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 18 18" fill="none">
-              <path
-                d="M9 2.5a6 6 0 0 1 6 6v1.5"
-                stroke="#00e5a0"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-              <path
-                d="M9 6.5a1.5 1.5 0 0 1 1.5 1.5v2.5a3 3 0 0 1-3 3"
-                stroke="#00e5a0"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-              <path
-                d="M5.2 5.8A4 4 0 0 0 5 8.5v2a5 5 0 0 0 1.2 3.2"
-                stroke="#00e5a0"
+{fingerprintEnabled && (
+            <button
+              onClick={() => setShowEnroll(true)}
+              className="hidden sm:flex items-center gap-1.5 mono text-xs px-3 py-1 rounded-full transition-all"
+              style={{
+                background: "rgba(0,229,160,0.08)",
+                color: "#00e5a0",
+                border: "1px solid rgba(0,229,160,0.2)",
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 18 18" fill="none">
+                <path
+                  d="M9 2.5a6 6 0 0 1 6 6v1.5"
+                  stroke="#00e5a0"
                   strokeWidth="1.5"
                   strokeLinecap="round"
                 />
-            </svg>
-            Enroll Fingerprint
-          </button>
+                <path
+                  d="M9 6.5a1.5 1.5 0 0 1 1.5 1.5v2.5a3 3 0 0 1-3 3"
+                  stroke="#00e5a0"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M5.2 5.8A4 4 0 0 0 5 8.5v2a5 5 0 0 0 1.2 3.2"
+                  stroke="#00e5a0"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+              Enroll Fingerprint
+            </button>
+            )}
         </div>
       </div>
 
@@ -348,7 +356,7 @@ export default function Terminal() {
                 transition: "background 0.25s, border-color 0.25s",
               }}
             >
-              {scanning ? (
+{scanning ? (
                 <svg
                   className="animate-spin"
                   width="36"
@@ -371,40 +379,44 @@ export default function Terminal() {
                   />
                 </svg>
               ) : (
-                <>
-                  {/* fingerprint icon */}
-                  <svg width="44" height="44" viewBox="0 0 18 18" fill="none">
-                    <path
-                      d="M9 2.5a6 6 0 0 1 6 6v1.5"
-                      stroke={statusColor}
-                      strokeWidth="1.3"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M9 4.5a4 4 0 0 1 4 4v2"
-                      stroke={statusColor}
-                      strokeWidth="1.3"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M3 9a6 6 0 0 1 2.5-4.9"
-                      stroke={statusColor}
-                      strokeWidth="1.3"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M9 6.5a1.5 1.5 0 0 1 1.5 1.5v2.5a3 3 0 0 1-3 3"
-                      stroke={statusColor}
-                      strokeWidth="1.3"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M5.2 5.8A4 4 0 0 0 5 8.5v2a5 5 0 0 0 1.2 3.2"
-                      stroke={statusColor}
-                      strokeWidth="1.3"
-                      strokeLinecap="round"
-                    />
-                  </svg>
+                <div>
+                  {fingerprintEnabled && (
+                    <>
+                    {/* fingerprint icon */}
+                    <svg width="44" height="44" viewBox="0 0 18 18" fill="none">
+                      <path
+                        d="M9 2.5a6 6 0 0 1 6 6v1.5"
+                        stroke={statusColor}
+                        strokeWidth="1.3"
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M9 4.5a4 4 0 0 1 4 4v2"
+                        stroke={statusColor}
+                        strokeWidth="1.3"
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M3 9a6 6 0 0 1 2.5-4.9"
+                        stroke={statusColor}
+                        strokeWidth="1.3"
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M9 6.5a1.5 1.5 0 0 1 1.5 1.5v2.5a3 3 0 0 1-3 3"
+                        stroke={statusColor}
+                        strokeWidth="1.3"
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M5.2 5.8A4 4 0 0 0 5 8.5v2a5 5 0 0 0 1.2 3.2"
+                        stroke={statusColor}
+                        strokeWidth="1.3"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    </>
+                  )}
                   <span
                     className="mono text-sm mt-2"
                     style={{ color: statusColor }}
@@ -412,10 +424,16 @@ export default function Terminal() {
                     {readerStatus !== "connected"
                       ? "READER OFFLINE"
                       : lastTap
-                        ? "TAP AGAIN"
-                        : "TAP OR TYPE ID"}
+                      ? "TAP AGAIN"
+                      : cardEnabled && fingerprintEnabled
+                      ? "TAP CARD OR TYPE ID"
+                      : cardEnabled
+                      ? "TAP CARD"
+                      : fingerprintEnabled
+                      ? "TYPE ID FOR FINGERPRINT"
+                      : "SYSTEM DISABLED"}
                   </span>
-                </>
+                </div>
               )}
             </div>
           </div>
@@ -425,7 +443,7 @@ export default function Terminal() {
             className="text-center h-16 flex flex-col items-center justify-center"
             key={tapKey}
           >
-            {tag ? (
+{tag ? (
               <div className="animate-slide-up flex flex-col items-center gap-1">
                 <div
                   className="text-2xl font-semibold"
@@ -441,51 +459,58 @@ export default function Terminal() {
               <div className="mono text-sm" style={{ color: "#2e3540" }}>
                 {readerStatus !== "connected"
                   ? "reader offline"
-                  : fingerprintBridgeConnected
+                  : cardEnabled && fingerprintEnabled
+                  ? fingerprintBridgeConnected
                     ? "tap your card, or type your 4-digit ID below"
-                    : "hold card near reader"}
+                    : "tap your card, or type your 4-digit ID below"
+                  : cardEnabled
+                  ? "tap your card"
+                  : fingerprintEnabled
+                  ? fingerprintBridgeConnected
+                    ? "type your 4-digit ID to verify by fingerprint"
+                    : "fingerprint scanner not connected"
+                  : "system disabled — enable card or fingerprint in admin"}
               </div>
             )}
           </div>
 
-          {/* Always visible — this is the SAME input the HID card reader
-              feeds (useHidCapture.ts tells the two apart by first
-              keystroke), so it must exist and stay focused regardless of
-              fingerprint bridge status, or card taps would break. Typed
-              digits and errors always show here too — silently hiding this
-              box whenever no bridge was connected used to make typing look
-              broken with zero feedback either way. */}
-          <div className="flex flex-col items-center gap-2">
-            <input
-              ref={inputRef}
-              value={displayValue}
-              readOnly
-              autoComplete="off"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-              onKeyDown={handleKeyDown}
-              placeholder="– – – –"
-              className="mono text-center text-2xl tracking-[0.4em] rounded-xl outline-none"
-              style={{
-                width: 220,
-                padding: "10px 0",
-                background: "#111418",
-                border: `1px solid ${codeError ? "rgba(255,77,106,0.5)" : "#1e2530"}`,
-                color: "#dde2ec",
-                caretColor: "#00e5a0",
-              }}
-            />
-            <span
-              className="mono text-xs"
-              style={{ color: codeError ? "#ff4d6a" : "#56627a" }}
-            >
-              {codeError ||
-                (fingerprintBridgeConnected
-                  ? "type your 4-digit ID to verify by fingerprint"
-                  : "fingerprint scanner not connected")}
-            </span>
-          </div>
+{(cardEnabled || fingerprintEnabled) && (
+            <div className="flex flex-col items-center gap-2">
+              <input
+                ref={inputRef}
+                value={displayValue}
+                readOnly
+                autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                onKeyDown={handleKeyDown}
+                placeholder={cardEnabled && fingerprintEnabled ? "– – – –" : cardEnabled ? "CARD" : "– – – –"}
+                className="mono text-center text-2xl tracking-[0.4em] rounded-xl outline-none"
+                style={{
+                  width: 220,
+                  padding: "10px 0",
+                  background: "#111418",
+                  border: `1px solid ${codeError ? "rgba(255,77,106,0.5)" : "#1e2530"}`,
+                  color: "#dde2ec",
+                  caretColor: "#00e5a0",
+                }}
+              />
+              <span
+                className="mono text-xs"
+                style={{ color: codeError ? "#ff4d6a" : "#56627a" }}
+              >
+                {codeError ||
+                  (fingerprintEnabled
+                    ? fingerprintBridgeConnected
+                      ? "type your 4-digit ID to verify by fingerprint"
+                      : "fingerprint scanner not connected"
+                    : cardEnabled
+                    ? "tap your card"
+                    : "system disabled")}
+              </span>
+            </div>
+            )}
         </div>
 
         {/* ── right panel ── */}
@@ -613,8 +638,8 @@ export default function Terminal() {
         </div>
       </div>
 
-      {showEnroll && <FingerprintEnroll onClose={() => setShowEnroll(false)} />}
-      {fingerprintTarget && (
+      {fingerprintEnabled && showEnroll && <FingerprintEnroll onClose={() => setShowEnroll(false)} />}
+      {fingerprintEnabled && fingerprintTarget && (
         <FingerprintScan
           student={fingerprintTarget}
           onClose={() => setFingerprintTarget(null)}

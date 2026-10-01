@@ -111,3 +111,10 @@ model ActiveSession {
   cardId      String?
   clockedInAt DateTime @default(now())
 }
+
+model AppSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}

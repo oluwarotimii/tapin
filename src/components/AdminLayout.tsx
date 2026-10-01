@@ -12,6 +12,7 @@ const PAGE_MAP: Record<string, AdminPage> = {
   "/admin/log": "log",
   "/admin/devices": "devices",
   "/admin/keys": "keys",
+  "/admin/settings": "settings",
 }
 
 export default function AdminLayout({
