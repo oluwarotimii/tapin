@@ -17,12 +17,43 @@ let checkDuplicateFingerFromBase64:
   | ((a: string, b: string) => Promise<boolean>)
   | null = null
 
+let matcherPromise: Promise<((a: string, b: string) => Promise<boolean>)> | null = null
+
 async function getMatcher() {
-  if (!checkDuplicateFingerFromBase64) {
-    const mod = await import("nbis-js")
-    checkDuplicateFingerFromBase64 = mod.checkDuplicateFingerFromBase64
+  if (checkDuplicateFingerFromBase64) return checkDuplicateFingerFromBase64
+  if (!matcherPromise) {
+    matcherPromise = (async () => {
+      const mod = await import("nbis-js")
+      checkDuplicateFingerFromBase64 = mod.checkDuplicateFingerFromBase64
+      return checkDuplicateFingerFromBase64
+    })()
   }
-  return checkDuplicateFingerFromBase64
+  return matcherPromise
+}
+
+export function prewarmMatcher() {
+  getMatcher()
+}
+
+export function invalidateTemplateCache(studentId: string) {
+  templateCache.delete(studentId)
+}
+
+const templateCache = new Map<string, { template: string; expires: number }>()
+const CACHE_TTL_MS = 60_000
+
+function getCachedTemplate(studentId: string): string | null {
+  const entry = templateCache.get(studentId)
+  if (!entry) return null
+  if (Date.now() > entry.expires) {
+    templateCache.delete(studentId)
+    return null
+  }
+  return entry.template
+}
+
+function setCachedTemplate(studentId: string, template: string) {
+  templateCache.set(studentId, { template, expires: Date.now() + CACHE_TTL_MS })
 }
 
 export type VerifyResult = "matched" | "no_match" | "not_enrolled"
@@ -38,16 +69,19 @@ export async function verifyStudentFingerprint(
   externalStudentId: string,
   liveWsqBase64: string,
 ): Promise<VerifyResult> {
-  const student = await prisma.student.findUnique({
-    where: { studentId: externalStudentId },
-    select: { fingerprintTemplate: { select: { template: true } } },
-  })
-  if (!student?.fingerprintTemplate) return "not_enrolled"
+  let enrolledBase64 = getCachedTemplate(externalStudentId)
+  if (!enrolledBase64) {
+    const student = await prisma.student.findUnique({
+      where: { studentId: externalStudentId },
+      select: { fingerprintTemplate: { select: { template: true } } },
+    })
+    if (!student?.fingerprintTemplate) return "not_enrolled"
+
+    enrolledBase64 = Buffer.from(student.fingerprintTemplate.template).toString("base64")
+    setCachedTemplate(externalStudentId, enrolledBase64)
+  }
 
   const check = await getMatcher()
-  const enrolledBase64 = Buffer.from(student.fingerprintTemplate.template).toString(
-    "base64",
-  )
   // checkDuplicateFingerFromBase64 throws (rather than returning false) on
   // malformed WSQ input — confirmed via a real NBIS decode error, not a
   // crash in our own code. A bad live scan must not 500 the request.

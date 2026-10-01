@@ -1,6 +1,8 @@
 import { authorizeRequest, authFailResponse } from "@/server/guard"
-import { verifyStudentFingerprint } from "@/server/fingerprintMatch"
+import { verifyStudentFingerprint, prewarmMatcher } from "@/server/fingerprintMatch"
 import { fingerprintVerify } from "@/lib/validation"
+
+prewarmMatcher()
 
 // Public like /api/v1/taps — the kiosk calls this with no admin session.
 // 1:1 verification: the caller already picked who they claim to be (via

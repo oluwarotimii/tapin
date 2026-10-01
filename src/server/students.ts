@@ -9,6 +9,7 @@ import {
 } from "@/lib/types"
 import { getStudentByInternalId } from "@/server/domain"
 import { getAttendance } from "@/server/attendance"
+import { invalidateTemplateCache } from "@/server/fingerprintMatch"
 
 const DAY_INDEX = DAYS.reduce<Record<string, number>>((m, d, i) => {
   m[d] = i
@@ -91,10 +92,13 @@ export async function enrollFingerprint(
     create: { studentId: id, finger, template: bytes },
     update: { finger, template: bytes },
   })
+  invalidateTemplateCache(student.studentId)
   return true
 }
 
 export async function removeFingerprint(id: string) {
+  const student = await prisma.student.findUnique({ where: { id } })
+  if (student) invalidateTemplateCache(student.studentId)
   await prisma.fingerprintTemplate.deleteMany({ where: { studentId: id } })
   return true
 }
