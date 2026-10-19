@@ -21,9 +21,16 @@ export async function getAppSettings(): Promise<AppSettings> {
     where: { key: { in: Object.values(SETTING_KEYS) } },
   })
   const map = new Map(rows.map((r) => [r.key, r.value]))
+  // A key with no row yet (fresh DB, never toggled) must fall back to
+  // DEFAULTS, not false — otherwise the terminal silently starts with
+  // every method disabled until someone happens to visit the settings page.
   return {
-    cardEnabled: map.get(SETTING_KEYS.cardEnabled) === "true",
-    fingerprintEnabled: map.get(SETTING_KEYS.fingerprintEnabled) === "true",
+    cardEnabled: map.has(SETTING_KEYS.cardEnabled)
+      ? map.get(SETTING_KEYS.cardEnabled) === "true"
+      : DEFAULTS.cardEnabled,
+    fingerprintEnabled: map.has(SETTING_KEYS.fingerprintEnabled)
+      ? map.get(SETTING_KEYS.fingerprintEnabled) === "true"
+      : DEFAULTS.fingerprintEnabled,
   }
 }
 
