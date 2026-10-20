@@ -16,3 +16,7 @@ logs/
 .claude-replay.*
 .tmp-*
 .vercel
+
+# tapintest build artifact — 280MB+, exceeds GitHub's 100MB file limit.
+# Served locally from public/downloads/ by the dev server; not committed.
+public/downloads/*.exe

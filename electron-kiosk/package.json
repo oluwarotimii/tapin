@@ -1,0 +1,32 @@
+{
+  "name": "tapin-kiosk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TapIn kiosk shell — a thin Electron wrapper around the hosted TapIn terminal page, with the wCopy USB reader bridge running inline so it starts automatically.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "node-hid": "^3.1.2"
+  },
+  "build": {
+    "appId": "co.tapin.kiosk",
+    "productName": "TapIn",
+    "directories": { "output": "dist" },
+    "npmRebuild": false,
+    "files": ["main.js", "bridge.js", "protocol.js", "splash.html", "offline.html", "build-resources/icon.png"],
+    "win": {
+      "target": "portable",
+      "icon": "build-resources/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "compression": "store",
+    "asarUnpack": ["**/node_modules/node-hid/**"]
+  }
+}

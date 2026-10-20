@@ -1,0 +1,13 @@
+{
+  "name": "wcopy-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local HTTP bridge for the NSCCN/wCopy Smart Reader (VID 0x0416, PID 0xb030). Runs alongside the TapIn kiosk browser tab so it can talk to the USB HID reader, which browsers can't access directly.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "node-hid": "^3.1.2"
+  }
+}

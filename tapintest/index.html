@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>TapInTest v1.4.0 — HID diagnostic</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, sans-serif; background: #0a0c0f; color: #dde2ec; margin: 0; padding: 20px; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  p.sub { color: #56627a; font-size: 13px; margin: 0 0 16px; }
+  select, button { font-size: 14px; padding: 8px 12px; border-radius: 8px; border: 1px solid #1e2530; background: #111418; color: #dde2ec; }
+  button { cursor: pointer; background: rgba(0,229,160,0.12); border-color: rgba(0,229,160,0.3); color: #00e5a0; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  #devices { width: 100%; margin-bottom: 10px; }
+  #status { font-size: 13px; color: #56627a; margin: 10px 0; }
+  #log { background: #111418; border: 1px solid #1e2530; border-radius: 8px; padding: 12px; height: 380px; overflow-y: auto; font-family: "DM Mono", monospace; font-size: 12px; white-space: pre-wrap; }
+  .row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+  .entry { margin-bottom: 6px; }
+  .entry .t { color: #2e3a4e; }
+  .entry .hex { color: #00e5a0; }
+  input[type="number"], input[type="text"] { font-size: 13px; padding: 7px 10px; border-radius: 8px; border: 1px solid #1e2530; background: #111418; color: #dde2ec; }
+  input[type="number"] { width: 70px; }
+  input[type="text"] { flex: 1; font-family: "DM Mono", monospace; }
+  label { font-size: 12px; color: #56627a; }
+  .section { border-top: 1px solid #1e2530; margin-top: 14px; padding-top: 14px; }
+  .section h2 { font-size: 13px; margin: 0 0 8px; color: #dde2ec; }
+  .section p { font-size: 12px; color: #56627a; margin: 0 0 8px; }
+</style>
+</head>
+<body>
+  <h1>TapInTest <span style="color:#00e5a0; font-size:13px; font-weight:normal;">v1.4.0 &middot; built 2026-10-20 09:24 UTC &middot; auto-detect mode</span></h1>
+  <p class="sub">Lists USB HID devices on this machine. Pick the RFID reader, hit Connect, then check "Auto-detect" below and just tap — no buttons needed, like the real app.</p>
+
+  <div class="row" style="background:#111418; border:1px solid #1e2530; border-radius:8px; padding:14px;">
+    <label style="display:flex; align-items:center; gap:8px; font-size:14px; color:#dde2ec;">
+      <input type="checkbox" id="autoDetect" style="width:auto;" />
+      Auto-detect (continuously poll for a card — just tap, no clicking)
+    </label>
+    <div id="cardStatus" style="margin-left:auto; font-family:'DM Mono',monospace; font-size:13px; color:#56627a;">waiting for a tap...</div>
+  </div>
+  <div class="row">
+    <button id="detectThenRead" style="background:rgba(255,176,58,0.12); border-color:rgba(255,176,58,0.3); color:#ffb03a;">Detect THEN Read page 0 (manual, back-to-back)</button>
+  </div>
+
+  <div class="row">
+    <select id="devices"></select>
+    <button id="refresh">Refresh list</button>
+  </div>
+  <div class="row">
+    <button id="connect">Connect</button>
+    <button id="disconnect" disabled>Disconnect</button>
+    <button id="copy">Copy log</button>
+    <button id="clear">Clear log</button>
+  </div>
+
+  <div id="status">Not connected.</div>
+  <div id="log"></div>
+
+  <div class="section">
+    <h2>Protocol console (reverse-engineered framing)</h2>
+    <p>Type the raw <b>payload only</b> (not the full frame) — it gets wrapped automatically with the sync byte, length, sequence counter, checksum, and trailer. Response decoding (status byte, ASCII) shows in the log above. Confirmed-working payloads: <code>ff 00 68</code> (device info), <code>ff 00 9a 5a a5 54 69 61 6e</code> (reset/ack).</p>
+    <div class="row">
+      <label>Payload hex</label>
+      <input type="text" id="cmdPayload" placeholder="e.g. ff 00 68" value="ff 00 68" />
+      <button id="sendCmd">Send</button>
+      <label style="margin-left:auto; display:flex; align-items:center; gap:6px;">
+        <input type="checkbox" id="cmdAutoPoll" style="width:auto;" /> Auto-poll every 300ms
+      </label>
+    </div>
+    <div class="row">
+      <button class="preset" data-payload="ff 00 68">Device info</button>
+      <button class="preset" data-payload="ff 00 9a 5a a5 54 69 61 6e">Reset/ack</button>
+    </div>
+    <p><b>PN532 commands (from a real API Monitor capture of nfcPro_x64.exe — the reader's chip is PN532-compatible).</b> Detect is byte-confirmed against a real UID/ATQA/SAK. Read-page command bytes are standard NTAG/PN532 spec but the response shape hasn't been live-verified yet — try it and see what comes back.</p>
+    <div class="row">
+      <button class="preset" data-payload="ff 00 00 00 04 d4 4a 01 00">Detect card (PN532 InListPassiveTarget)</button>
+      <button class="preset" data-payload="ff 00 00 00 06 d4 40 01 3a 00 00">Read page 0 (FAST_READ)</button>
+      <button class="preset" data-payload="ff 00 00 00 06 d4 40 01 3a 01 01">Read page 1</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Feature / Output report probe</h2>
+    <p>If nothing shows above when you tap, this device likely doesn't push Input reports — it probably needs to be polled via Feature Report, or needs a command sent first. Try Get Feature Report with different report IDs (0-8) while tapping, or send a command then read.</p>
+    <div class="row">
+      <label>Report ID</label>
+      <input type="number" id="reportId" value="0" min="0" max="255" />
+      <label>Length</label>
+      <input type="number" id="reportLen" value="32" min="1" max="256" />
+      <button id="getFeature">Get Feature Report</button>
+      <label style="margin-left:auto; display:flex; align-items:center; gap:6px;">
+        <input type="checkbox" id="autoPoll" style="width:auto;" /> Auto-poll every 400ms
+      </label>
+    </div>
+    <div class="row">
+      <label>Hex bytes</label>
+      <input type="text" id="hexBytes" placeholder="e.g. 00 01 02" />
+      <button id="sendFeature">Send Feature Report</button>
+      <button id="writeOutput">Write Output Report</button>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

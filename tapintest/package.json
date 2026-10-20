@@ -1,0 +1,31 @@
+{
+  "name": "tapintest",
+  "version": "1.4.0",
+  "private": true,
+  "description": "Minimal diagnostic tool: lists USB HID devices and shows raw report bytes as you tap a card, to figure out what an undocumented RFID/NFC reader actually sends.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "node-hid": "^3.1.2"
+  },
+  "build": {
+    "appId": "com.tapin.tapintest",
+    "productName": "TapInTest",
+    "directories": { "output": "dist" },
+    "npmRebuild": false,
+    "files": ["main.js", "preload.js", "index.html", "renderer.js", "protocol.js"],
+    "win": {
+      "target": "portable",
+      "signAndEditExecutable": false
+    },
+    "compression": "store",
+    "asarUnpack": ["**/node_modules/node-hid/**"]
+  }
+}

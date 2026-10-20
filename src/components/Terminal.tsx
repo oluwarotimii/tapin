@@ -3,7 +3,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { db, type TapResult } from "../store";
 import { reader, type TapEvent } from "../reader";
-import { useReaderStatus, useFingerprintBridgeConnected } from "../hooks";
+import {
+  useReaderStatus,
+  useFingerprintBridgeConnected,
+  useWcopyAutoTap,
+  useWcopyBridgeConnected,
+} from "../hooks";
 import { useHidCapture } from "../useHidCapture";
 import { useAppSettings } from "../hooks/useAppSettings";
 import { tapTag, hexA } from "../tapFormat";
@@ -33,6 +38,7 @@ export default function Terminal() {
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const readerStatus = useReaderStatus();
   const fingerprintBridgeConnected = useFingerprintBridgeConnected();
+  const wcopyBridgeConnected = useWcopyBridgeConnected();
   const settings = useAppSettings();
   const cardEnabled = settings.cardEnabled;
   const fingerprintEnabled = settings.fingerprintEnabled;
@@ -87,6 +93,12 @@ export default function Terminal() {
     onCode: handleCode,
     codeLength: 4,
   });
+
+  // wCopy USB reader (reverse-engineered — docs/fingerprint-integration.md
+  // style local bridge, see wcopy-bridge/). Independent of the HID
+  // keyboard-wedge path above; both feed the same reader.submitCardTap
+  // pipeline, so either physical reader can be plugged in.
+  useWcopyAutoTap(readerStatus === "connected" && cardEnabled);
 
   useEffect(() => {
     return reader.subscribeTaps((ev) => {
@@ -239,6 +251,27 @@ export default function Terminal() {
             />
             READER {rs.label}
           </div>
+          {/* wCopy USB reader — real hardware connectivity, independent of
+              the manual kiosk-armed toggle above */}
+          {cardEnabled && (
+            <div
+              className="hidden sm:flex items-center gap-2 mono text-xs px-3 py-1 rounded-full"
+              style={{
+                background: hexA(wcopyBridgeConnected ? "#00e5a0" : "#ff4d6a", 0.08),
+                color: wcopyBridgeConnected ? "#00e5a0" : "#ff4d6a",
+                border: `1px solid ${hexA(wcopyBridgeConnected ? "#00e5a0" : "#ff4d6a", 0.25)}`,
+              }}
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{
+                  background: wcopyBridgeConnected ? "#00e5a0" : "#ff4d6a",
+                  boxShadow: wcopyBridgeConnected ? "0 0 4px #00e5a0" : "none",
+                }}
+              />
+              USB READER {wcopyBridgeConnected ? "CONNECTED" : "NOT FOUND"}
+            </div>
+          )}
           {/* today's schedule pill */}
           {todaySchedule ? (
             <div
@@ -271,6 +304,104 @@ export default function Terminal() {
           <span className="mono text-xs" style={{ color: "#56627a" }}>
             {dateDisplay}
           </span>
+          <a
+            href="https://github.com/oluwarotimii/tapin/releases/download/tapintest-v1.0.0/TapInTest.exe"
+            className="hidden sm:flex items-center gap-1.5 mono text-xs px-3 py-1 rounded-full transition-all"
+            style={{
+              background: "rgba(255,176,58,0.08)",
+              color: "#ffb03a",
+              border: "1px solid rgba(255,176,58,0.2)",
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 18 18" fill="none">
+              <path
+                d="M9 2.5v8.5"
+                stroke="#ffb03a"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+              <path
+                d="M5.5 8 9 11.5 12.5 8"
+                stroke="#ffb03a"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M3.5 13.5h11"
+                stroke="#ffb03a"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+            Download TapInTest
+          </a>
+          <a
+            href="/downloads/wcopy-bridge.zip"
+            download
+            className="hidden sm:flex items-center gap-1.5 mono text-xs px-3 py-1 rounded-full transition-all"
+            style={{
+              background: "rgba(0,229,160,0.08)",
+              color: "#00e5a0",
+              border: "1px solid rgba(0,229,160,0.2)",
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 18 18" fill="none">
+              <path
+                d="M9 2.5v8.5"
+                stroke="#00e5a0"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+              <path
+                d="M5.5 8 9 11.5 12.5 8"
+                stroke="#00e5a0"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M3.5 13.5h11"
+                stroke="#00e5a0"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+            Download wcopy-bridge
+          </a>
+          <a
+            href="/downloads/TapIn-Kiosk.exe"
+            download
+            className="hidden sm:flex items-center gap-1.5 mono text-xs px-3 py-1 rounded-full transition-all"
+            style={{
+              background: "rgba(0,229,160,0.08)",
+              color: "#00e5a0",
+              border: "1px solid rgba(0,229,160,0.2)",
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 18 18" fill="none">
+              <path
+                d="M9 2.5v8.5"
+                stroke="#00e5a0"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+              <path
+                d="M5.5 8 9 11.5 12.5 8"
+                stroke="#00e5a0"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M3.5 13.5h11"
+                stroke="#00e5a0"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+            Download TapIn Kiosk
+          </a>
 {fingerprintEnabled && (
             <button
               onClick={() => setShowEnroll(true)}
