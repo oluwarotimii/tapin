@@ -5,10 +5,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "==> Generating Prisma client (bundled binaries for common cPanel hosts)..."
-npx prisma generate
+pnpm exec prisma generate
 
 echo "==> Building in standalone mode..."
-TAPIN_BUILD_STANDALONE=1 npx next build
+TAPIN_BUILD_STANDALONE=1 pnpm exec next build
 
 DIST=".next/standalone"
 
@@ -26,7 +26,12 @@ cp -r prisma/. "$DIST/prisma/"
 echo "==> Bundling the Prisma CLI for the one-time migration step..."
 PRISMA_VERSION=$(node -e "console.log(require('./node_modules/prisma/package.json').version)")
 PRISMA_SCRATCH=$(mktemp -d)
-(cd "$PRISMA_SCRATCH" && npm init -y >/dev/null 2>&1 && npm install "prisma@${PRISMA_VERSION}" --omit=dev --no-audit --no-fund >/dev/null 2>&1)
+# PRISMA_CLI_BINARY_TARGETS forces fetching the target host's engine
+# binaries (RHEL/CloudLinux, matching schema.prisma's binaryTargets)
+# instead of whatever this build machine's own platform happens to be —
+# otherwise the CLI falls back to its WASM schema engine at runtime,
+# which has a real bug where it can't validate ANY datasource URL.
+(cd "$PRISMA_SCRATCH" && npm init -y >/dev/null 2>&1 && PRISMA_CLI_BINARY_TARGETS="rhel-openssl-1.0.x,rhel-openssl-3.0.x" npm install "prisma@${PRISMA_VERSION}" --omit=dev --no-audit --no-fund >/dev/null 2>&1)
 mkdir -p "$DIST/node_modules/prisma" "$DIST/node_modules/@prisma"
 cp -rL "$PRISMA_SCRATCH/node_modules/prisma/." "$DIST/node_modules/prisma/"
 cp -rL "$PRISMA_SCRATCH/node_modules/@prisma/." "$DIST/node_modules/@prisma/"
