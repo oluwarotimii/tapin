@@ -34,8 +34,12 @@ PRISMA_SCRATCH=$(mktemp -d)
 # on a real RHEL/CloudLinux host — so "debian" must be present too,
 # or the CLI finds no matching native engine and silently drops to
 # its WASM schema engine, which has a real bug where it can't
-# validate ANY datasource URL.
-(cd "$PRISMA_SCRATCH" && npm init -y >/dev/null 2>&1 && PRISMA_CLI_BINARY_TARGETS="rhel-openssl-1.0.x,rhel-openssl-3.0.x,debian-openssl-3.0.x" npm install "prisma@${PRISMA_VERSION}" --omit=dev --no-audit --no-fund >/dev/null 2>&1)
+# validate ANY datasource URL. debian-openssl-1.1.x is ALSO required:
+# the target box has both libssl.so.1.1 and libssl.so.3 installed
+# side by side, and Prisma's ldconfig-based version sniffing picked
+# "1.1.x" over the box's real, newer OpenSSL 3.5.8 — confirmed via
+# DEBUG="prisma:get-platform" on the live server.
+(cd "$PRISMA_SCRATCH" && npm init -y >/dev/null 2>&1 && PRISMA_CLI_BINARY_TARGETS="rhel-openssl-1.0.x,rhel-openssl-3.0.x,debian-openssl-3.0.x,debian-openssl-1.1.x" npm install "prisma@${PRISMA_VERSION}" --omit=dev --no-audit --no-fund >/dev/null 2>&1)
 mkdir -p "$DIST/node_modules/prisma" "$DIST/node_modules/@prisma"
 cp -rL "$PRISMA_SCRATCH/node_modules/prisma/." "$DIST/node_modules/prisma/"
 cp -rL "$PRISMA_SCRATCH/node_modules/@prisma/." "$DIST/node_modules/@prisma/"
