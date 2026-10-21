@@ -324,10 +324,10 @@
     "serverExternalPackages": [
       "nbis-js"
     ],
-    "repoRoot": "/home/frobenius/Desktop/Orionis/tapin",
     "turbopack": {
       "root": "/home/frobenius/Desktop/Orionis/tapin"
     },
+    "repoRoot": "/home/frobenius/Desktop/Orionis/tapin",
     "distDirRoot": ".next"
   },
   "appDir": "/home/frobenius/Desktop/Orionis/tapin",
