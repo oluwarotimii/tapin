@@ -26,12 +26,16 @@ cp -r prisma/. "$DIST/prisma/"
 echo "==> Bundling the Prisma CLI for the one-time migration step..."
 PRISMA_VERSION=$(node -e "console.log(require('./node_modules/prisma/package.json').version)")
 PRISMA_SCRATCH=$(mktemp -d)
-# PRISMA_CLI_BINARY_TARGETS forces fetching the target host's engine
-# binaries (RHEL/CloudLinux, matching schema.prisma's binaryTargets)
-# instead of whatever this build machine's own platform happens to be —
-# otherwise the CLI falls back to its WASM schema engine at runtime,
-# which has a real bug where it can't validate ANY datasource URL.
-(cd "$PRISMA_SCRATCH" && npm init -y >/dev/null 2>&1 && PRISMA_CLI_BINARY_TARGETS="rhel-openssl-1.0.x,rhel-openssl-3.0.x" npm install "prisma@${PRISMA_VERSION}" --omit=dev --no-audit --no-fund >/dev/null 2>&1)
+# PRISMA_CLI_BINARY_TARGETS forces fetching engine binaries for the
+# target host instead of whatever this build machine's own platform
+# happens to be. Bundling BOTH debian and rhel variants: cPanel's
+# jailed shell (CageFS) hides distro info from Prisma's own platform
+# detection, which then unconditionally falls back to "debian" even
+# on a real RHEL/CloudLinux host — so "debian" must be present too,
+# or the CLI finds no matching native engine and silently drops to
+# its WASM schema engine, which has a real bug where it can't
+# validate ANY datasource URL.
+(cd "$PRISMA_SCRATCH" && npm init -y >/dev/null 2>&1 && PRISMA_CLI_BINARY_TARGETS="rhel-openssl-1.0.x,rhel-openssl-3.0.x,debian-openssl-3.0.x" npm install "prisma@${PRISMA_VERSION}" --omit=dev --no-audit --no-fund >/dev/null 2>&1)
 mkdir -p "$DIST/node_modules/prisma" "$DIST/node_modules/@prisma"
 cp -rL "$PRISMA_SCRATCH/node_modules/prisma/." "$DIST/node_modules/prisma/"
 cp -rL "$PRISMA_SCRATCH/node_modules/@prisma/." "$DIST/node_modules/@prisma/"
