@@ -1,4 +1,4 @@
-import { api, apiText } from "./lib/api"
+import { api, apiText, ApiError } from "./lib/api"
 import { DAYS, generateCardId, type ActiveSession, type AttendanceRecord, type CSVImportResult, type ScheduleDay, type Student, type StudentStatus, type TapResult } from "./lib/types"
 import { parseCSV } from "./lib/csv"
 
@@ -247,6 +247,27 @@ export const db = {
       bump()
     }
     return res.ok
+  },
+
+  // Public kiosk self-enrollment — binds cardId to studentId only if neither
+  // already has a binding (see bindNewCard server-side); unlike writeCard,
+  // never overwrites, so it's safe to expose unauthenticated.
+  async bindCard(
+    studentId: string,
+    cardId: string,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    try {
+      await api<{ ok: boolean }>("/api/v1/cards/bind", {
+        method: "POST",
+        body: JSON.stringify({ student_id: studentId, card_id: cardId }),
+      })
+      const target = _c.students.find((s) => s.studentId === studentId)
+      if (target) target.cardId = cardId
+      bump()
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, reason: err instanceof ApiError ? err.message : "unknown_error" }
+    }
   },
 
   async readCard(cardId: string): Promise<{ student?: Student; isTapIn: boolean }> {

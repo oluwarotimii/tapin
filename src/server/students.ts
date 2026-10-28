@@ -63,6 +63,29 @@ export async function blankCard(cardId: string) {
   await prisma.student.updateMany({ where: { cardId }, data: { cardId: null } })
 }
 
+// Public self-enrollment path (kiosk "new card" modal): unlike writeCard,
+// this never overwrites an existing binding — a student who already has a
+// card, or a card already linked to someone else, must go through the
+// admin Cards page instead. Keeps the unauthenticated kiosk endpoint from
+// being usable to hijack another student's attendance identity.
+export async function bindNewCard(
+  studentId: string,
+  cardId: string,
+): Promise<
+  | { ok: true }
+  | { ok: false; reason: "student_not_found" | "student_has_card" | "card_in_use" }
+> {
+  const student = await prisma.student.findUnique({ where: { studentId } })
+  if (!student) return { ok: false, reason: "student_not_found" }
+  if (student.cardId) return { ok: false, reason: "student_has_card" }
+
+  const existing = await prisma.student.findUnique({ where: { cardId } })
+  if (existing) return { ok: false, reason: "card_in_use" }
+
+  await prisma.student.update({ where: { id: student.id }, data: { cardId } })
+  return { ok: true }
+}
+
 export async function readCard(cardId: string) {
   const s = await prisma.student.findUnique({ where: { cardId } })
   return {

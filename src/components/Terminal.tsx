@@ -15,6 +15,7 @@ import { tapTag, hexA } from "../tapFormat";
 import type { Student } from "../lib/types";
 import FingerprintEnroll from "./FingerprintEnroll";
 import FingerprintScan from "./FingerprintScan";
+import CardBind from "./CardBind";
 
 const CLEAR_DELAY = 2800; // ms before status resets to idle
 
@@ -26,6 +27,7 @@ export default function Terminal() {
   const [scanning, setScanning] = useState(false);
   const [showEnroll, setShowEnroll] = useState(false);
   const [fingerprintTarget, setFingerprintTarget] = useState<Student | null>(null);
+  const [newCardId, setNewCardId] = useState<string | null>(null);
   const [codeError, setCodeError] = useState("");
   const codeErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -93,6 +95,11 @@ export default function Terminal() {
   // pipeline, so either physical reader can be plugged in.
   useWcopyAutoTap(readerStatus === "connected" && cardEnabled);
 
+  const cardEnabledRef = useRef(cardEnabled);
+  useEffect(() => {
+    cardEnabledRef.current = cardEnabled;
+  }, [cardEnabled]);
+
   useEffect(() => {
     return reader.subscribeTaps((ev) => {
       setLastTap(ev.result);
@@ -100,6 +107,11 @@ export default function Terminal() {
       setEvents((prev) => [ev, ...prev].slice(0, 50));
       if (clearTimer.current) clearTimeout(clearTimer.current);
       clearTimer.current = setTimeout(() => setLastTap(null), CLEAR_DELAY);
+      // Unrecognized card tap, NFC mode on — this is likely a brand new
+      // card; offer the self-enrollment modal instead of a dead end.
+      if (ev.result.kind === "not_recognized" && cardEnabledRef.current) {
+        setNewCardId(ev.cardId);
+      }
     });
   }, []);
 
@@ -666,6 +678,9 @@ export default function Terminal() {
           student={fingerprintTarget}
           onClose={() => setFingerprintTarget(null)}
         />
+      )}
+      {newCardId && (
+        <CardBind cardId={newCardId} onClose={() => setNewCardId(null)} />
       )}
     </div>
   );
