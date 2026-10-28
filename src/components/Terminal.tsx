@@ -18,13 +18,6 @@ import FingerprintScan from "./FingerprintScan";
 
 const CLEAR_DELAY = 2800; // ms before status resets to idle
 
-const READER_STATUS: Record<string, { label: string; color: string }> = {
-  disconnected: { label: "OFFLINE", color: "#ff4d6a" },
-  connecting: { label: "CONNECTING", color: "#ffb03a" },
-  connected: { label: "ONLINE", color: "#00e5a0" },
-  error: { label: "ERROR", color: "#ff4d6a" },
-};
-
 export default function Terminal() {
   const [now, setNow] = useState(new Date());
   const [lastTap, setLastTap] = useState<TapResult | null>(null);
@@ -119,20 +112,6 @@ export default function Terminal() {
     day: "numeric",
   });
 
-  const todaySchedule = (() => {
-    const days = [
-      "sunday",
-      "monday",
-      "tuesday",
-      "wednesday",
-      "thursday",
-      "friday",
-      "saturday",
-    ];
-    return db.getSchedule().find((s) => s.day === days[now.getDay()]);
-  })();
-
-  const rs = READER_STATUS[readerStatus] ?? READER_STATUS.disconnected;
   const tag = lastTap ? tapTag(lastTap) : null;
   const statusColor = tag ? tag.color : "#2e3540";
   const statusBg = tag ? hexA(tag.color, 0.08) : "rgba(46,53,64,0.12)";
@@ -232,27 +211,10 @@ export default function Terminal() {
         </div>
 
         <div className="flex items-center gap-4">
-          {/* reader status pill */}
-          <div
-            className="hidden sm:flex items-center gap-2 mono text-xs px-3 py-1 rounded-full"
-            style={{
-              background: hexA(rs.color, 0.08),
-              color: rs.color,
-              border: `1px solid ${hexA(rs.color, 0.25)}`,
-            }}
-          >
-            <span
-              className="w-1.5 h-1.5 rounded-full"
-              style={{
-                background: rs.color,
-                boxShadow:
-                  readerStatus === "connected" ? `0 0 4px ${rs.color}` : "none",
-              }}
-            />
-            READER {rs.label}
-          </div>
-          {/* wCopy USB reader — real hardware connectivity, independent of
-              the manual kiosk-armed toggle above */}
+          {/* Hardware status — one pill per active input mode, driven by the
+              real connectivity signal (wcopy-bridge / fingerprint bridge),
+              not the manual kiosk-armed toggle (readerStatus still gates
+              actual tap handling below, it's just no longer shown here). */}
           {cardEnabled && (
             <div
               className="hidden sm:flex items-center gap-2 mono text-xs px-3 py-1 rounded-full"
@@ -262,147 +224,52 @@ export default function Terminal() {
                 border: `1px solid ${hexA(wcopyBridgeConnected ? "#00e5a0" : "#ff4d6a", 0.25)}`,
               }}
             >
+              <svg width="12" height="12" viewBox="0 0 18 18" fill="none">
+                <path
+                  d="M3 7.5a6.5 6.5 0 0 1 12 0"
+                  stroke={wcopyBridgeConnected ? "#00e5a0" : "#ff4d6a"}
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M5.3 9a3.8 3.8 0 0 1 7.4 0"
+                  stroke={wcopyBridgeConnected ? "#00e5a0" : "#ff4d6a"}
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+                <circle
+                  cx="9"
+                  cy="11.2"
+                  r="1.1"
+                  fill={wcopyBridgeConnected ? "#00e5a0" : "#ff4d6a"}
+                />
+              </svg>
+              NFC READER {wcopyBridgeConnected ? "CONNECTED" : "NOT FOUND"}
+            </div>
+          )}
+          {fingerprintEnabled && (
+            <div
+              className="hidden sm:flex items-center gap-2 mono text-xs px-3 py-1 rounded-full"
+              style={{
+                background: hexA(fingerprintBridgeConnected ? "#00e5a0" : "#ff4d6a", 0.08),
+                color: fingerprintBridgeConnected ? "#00e5a0" : "#ff4d6a",
+                border: `1px solid ${hexA(fingerprintBridgeConnected ? "#00e5a0" : "#ff4d6a", 0.25)}`,
+              }}
+            >
               <span
                 className="w-1.5 h-1.5 rounded-full"
                 style={{
-                  background: wcopyBridgeConnected ? "#00e5a0" : "#ff4d6a",
-                  boxShadow: wcopyBridgeConnected ? "0 0 4px #00e5a0" : "none",
+                  background: fingerprintBridgeConnected ? "#00e5a0" : "#ff4d6a",
+                  boxShadow: fingerprintBridgeConnected ? "0 0 4px #00e5a0" : "none",
                 }}
               />
-              USB READER {wcopyBridgeConnected ? "CONNECTED" : "NOT FOUND"}
-            </div>
-          )}
-          {/* today's schedule pill */}
-          {todaySchedule ? (
-            <div
-              className="hidden sm:flex items-center gap-2 mono text-xs px-3 py-1 rounded-full"
-              style={{
-                background: "rgba(0,229,160,0.08)",
-                color: "#00e5a0",
-                border: "1px solid rgba(0,229,160,0.2)",
-              }}
-            >
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ background: "#00e5a0", boxShadow: "0 0 4px #00e5a0" }}
-              />
-              {todaySchedule.start} – {todaySchedule.end} · min{" "}
-              {todaySchedule.minimumMinutes}m
-            </div>
-          ) : (
-            <div
-              className="hidden sm:flex items-center gap-2 mono text-xs px-3 py-1 rounded-full"
-              style={{
-                background: "rgba(255,77,106,0.08)",
-                color: "#ff4d6a",
-                border: "1px solid rgba(255,77,106,0.2)",
-              }}
-            >
-              No schedule today
+              FINGERPRINT {fingerprintBridgeConnected ? "CONNECTED" : "NOT FOUND"}
             </div>
           )}
           <span className="mono text-xs" style={{ color: "#56627a" }}>
             {dateDisplay}
           </span>
-          <a
-            href="https://github.com/oluwarotimii/tapin/releases/download/tapintest-v1.0.0/TapInTest.exe"
-            className="hidden sm:flex items-center gap-1.5 mono text-xs px-3 py-1 rounded-full transition-all"
-            style={{
-              background: "rgba(255,176,58,0.08)",
-              color: "#ffb03a",
-              border: "1px solid rgba(255,176,58,0.2)",
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 18 18" fill="none">
-              <path
-                d="M9 2.5v8.5"
-                stroke="#ffb03a"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-              <path
-                d="M5.5 8 9 11.5 12.5 8"
-                stroke="#ffb03a"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M3.5 13.5h11"
-                stroke="#ffb03a"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-            Download TapInTest
-          </a>
-          <a
-            href="/downloads/wcopy-bridge.zip"
-            download
-            className="hidden sm:flex items-center gap-1.5 mono text-xs px-3 py-1 rounded-full transition-all"
-            style={{
-              background: "rgba(0,229,160,0.08)",
-              color: "#00e5a0",
-              border: "1px solid rgba(0,229,160,0.2)",
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 18 18" fill="none">
-              <path
-                d="M9 2.5v8.5"
-                stroke="#00e5a0"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-              <path
-                d="M5.5 8 9 11.5 12.5 8"
-                stroke="#00e5a0"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M3.5 13.5h11"
-                stroke="#00e5a0"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-            Download wcopy-bridge
-          </a>
-          <a
-            href="/downloads/TapIn-Kiosk.exe"
-            download
-            className="hidden sm:flex items-center gap-1.5 mono text-xs px-3 py-1 rounded-full transition-all"
-            style={{
-              background: "rgba(0,229,160,0.08)",
-              color: "#00e5a0",
-              border: "1px solid rgba(0,229,160,0.2)",
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 18 18" fill="none">
-              <path
-                d="M9 2.5v8.5"
-                stroke="#00e5a0"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-              <path
-                d="M5.5 8 9 11.5 12.5 8"
-                stroke="#00e5a0"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M3.5 13.5h11"
-                stroke="#00e5a0"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-            Download TapIn Kiosk
-          </a>
-{fingerprintEnabled && (
+          {fingerprintEnabled && (
             <button
               onClick={() => setShowEnroll(true)}
               className="hidden sm:flex items-center gap-1.5 mono text-xs px-3 py-1 rounded-full transition-all"
@@ -510,44 +377,68 @@ export default function Terminal() {
                   />
                 </svg>
               ) : (
-                <div>
-                  {fingerprintEnabled && (
-                    <>
-                    {/* fingerprint icon */}
-                    <svg width="44" height="44" viewBox="0 0 18 18" fill="none">
-                      <path
-                        d="M9 2.5a6 6 0 0 1 6 6v1.5"
-                        stroke={statusColor}
-                        strokeWidth="1.3"
-                        strokeLinecap="round"
-                      />
-                      <path
-                        d="M9 4.5a4 4 0 0 1 4 4v2"
-                        stroke={statusColor}
-                        strokeWidth="1.3"
-                        strokeLinecap="round"
-                      />
-                      <path
-                        d="M3 9a6 6 0 0 1 2.5-4.9"
-                        stroke={statusColor}
-                        strokeWidth="1.3"
-                        strokeLinecap="round"
-                      />
-                      <path
-                        d="M9 6.5a1.5 1.5 0 0 1 1.5 1.5v2.5a3 3 0 0 1-3 3"
-                        stroke={statusColor}
-                        strokeWidth="1.3"
-                        strokeLinecap="round"
-                      />
-                      <path
-                        d="M5.2 5.8A4 4 0 0 0 5 8.5v2a5 5 0 0 0 1.2 3.2"
-                        stroke={statusColor}
-                        strokeWidth="1.3"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    </>
-                  )}
+                <div className="flex flex-col items-center">
+                  <div className="flex items-center gap-3">
+                    {cardEnabled && (
+                      <svg width="44" height="44" viewBox="0 0 18 18" fill="none">
+                        {/* NFC/contactless icon */}
+                        <path
+                          d="M3 7.5a6.5 6.5 0 0 1 12 0"
+                          stroke={statusColor}
+                          strokeWidth="1.3"
+                          strokeLinecap="round"
+                        />
+                        <path
+                          d="M5.3 9a3.8 3.8 0 0 1 7.4 0"
+                          stroke={statusColor}
+                          strokeWidth="1.3"
+                          strokeLinecap="round"
+                        />
+                        <path
+                          d="M7.6 10.5a1.4 1.4 0 0 1 2.8 0"
+                          stroke={statusColor}
+                          strokeWidth="1.3"
+                          strokeLinecap="round"
+                        />
+                        <circle cx="9" cy="12.2" r="1" fill={statusColor} />
+                      </svg>
+                    )}
+                    {fingerprintEnabled && (
+                      <svg width="44" height="44" viewBox="0 0 18 18" fill="none">
+                        {/* fingerprint icon */}
+                        <path
+                          d="M9 2.5a6 6 0 0 1 6 6v1.5"
+                          stroke={statusColor}
+                          strokeWidth="1.3"
+                          strokeLinecap="round"
+                        />
+                        <path
+                          d="M9 4.5a4 4 0 0 1 4 4v2"
+                          stroke={statusColor}
+                          strokeWidth="1.3"
+                          strokeLinecap="round"
+                        />
+                        <path
+                          d="M3 9a6 6 0 0 1 2.5-4.9"
+                          stroke={statusColor}
+                          strokeWidth="1.3"
+                          strokeLinecap="round"
+                        />
+                        <path
+                          d="M9 6.5a1.5 1.5 0 0 1 1.5 1.5v2.5a3 3 0 0 1-3 3"
+                          stroke={statusColor}
+                          strokeWidth="1.3"
+                          strokeLinecap="round"
+                        />
+                        <path
+                          d="M5.2 5.8A4 4 0 0 0 5 8.5v2a5 5 0 0 0 1.2 3.2"
+                          stroke={statusColor}
+                          strokeWidth="1.3"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    )}
+                  </div>
                   <span
                     className="mono text-sm mt-2"
                     style={{ color: statusColor }}
