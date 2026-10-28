@@ -18,6 +18,7 @@
   "/api/keys/route": "app/api/keys/route.js",
   "/api/v1/attendance/export/route": "app/api/v1/attendance/export/route.js",
   "/api/v1/attendance/route": "app/api/v1/attendance/route.js",
+  "/api/v1/cards/bind/route": "app/api/v1/cards/bind/route.js",
   "/api/v1/cards/route": "app/api/v1/cards/route.js",
   "/api/v1/fingerprint/verify/route": "app/api/v1/fingerprint/verify/route.js",
   "/api/v1/import/route": "app/api/v1/import/route.js",

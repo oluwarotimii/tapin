@@ -193,6 +193,12 @@
       "namedRegex": "^/api/v1/cards(?:/)?$"
     },
     {
+      "page": "/api/v1/cards/bind",
+      "regex": "^/api/v1/cards/bind(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/v1/cards/bind(?:/)?$"
+    },
+    {
       "page": "/api/v1/fingerprint/verify",
       "regex": "^/api/v1/fingerprint/verify(?:/)?$",
       "routeKeys": {},

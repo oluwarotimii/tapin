@@ -18,6 +18,7 @@
   "/api/keys/route": "/api/keys",
   "/api/v1/attendance/export/route": "/api/v1/attendance/export",
   "/api/v1/attendance/route": "/api/v1/attendance",
+  "/api/v1/cards/bind/route": "/api/v1/cards/bind",
   "/api/v1/cards/route": "/api/v1/cards",
   "/api/v1/fingerprint/verify/route": "/api/v1/fingerprint/verify",
   "/api/v1/import/route": "/api/v1/import",
