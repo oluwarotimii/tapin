@@ -12,7 +12,8 @@ const { app, BrowserWindow, globalShortcut } = require("electron")
 const path = require("path")
 const { startBridge } = require("./bridge")
 
-const KIOSK_URL = process.env.TAPIN_KIOSK_URL || "http://localhost:8443/terminal"
+const KIOSK_URL =
+  process.env.TAPIN_KIOSK_URL || "https://tapin.femtechaccess.com.ng/terminal"
 const RETRY_MS = 3000
 
 let mainWindow = null
