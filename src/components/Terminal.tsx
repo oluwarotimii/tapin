@@ -357,7 +357,7 @@ export default function Terminal() {
             )}
 
             <div
-              className="rounded-full flex flex-col items-center justify-center select-none"
+              className="relative rounded-full select-none overflow-hidden"
               style={{
                 width: 190,
                 height: 190,
@@ -366,31 +366,33 @@ export default function Terminal() {
                 transition: "background 0.25s, border-color 0.25s",
               }}
             >
-{scanning ? (
-                <svg
-                  className="animate-spin"
-                  width="36"
-                  height="36"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                >
-                  <circle
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="#2e3540"
-                    strokeWidth="2"
-                  />
-                  <path
-                    d="M12 2a10 10 0 0 1 10 10"
-                    stroke="#00e5a0"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                  />
-                </svg>
+              {scanning ? (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <svg
+                    className="animate-spin"
+                    width="36"
+                    height="36"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                  >
+                    <circle
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="#2e3540"
+                      strokeWidth="2"
+                    />
+                    <path
+                      d="M12 2a10 10 0 0 1 10 10"
+                      stroke="#00e5a0"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </div>
               ) : (
-                <div className="flex flex-col items-center">
-                  <div className="flex items-center gap-3">
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4">
+                  <div className="flex items-center justify-center gap-4">
                     {cardEnabled && (
                       <svg width="44" height="44" viewBox="0 0 18 18" fill="none">
                         {/* NFC/contactless icon */}
@@ -452,7 +454,7 @@ export default function Terminal() {
                     )}
                   </div>
                   <span
-                    className="mono text-sm mt-2"
+                    className="mono text-xs sm:text-sm text-center leading-tight"
                     style={{ color: statusColor }}
                   >
                     {readerStatus !== "connected"

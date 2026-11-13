@@ -131,3 +131,43 @@ model AppSetting {
   value     String
   updatedAt DateTime @updatedAt
 }
+
+// ── ZKTeco ADMS (push) devices ──────────────────────────────────────────────
+// The UA300 (and other ZKTeco terminals) connect outbound to this app over
+// the ADMS/push protocol and POST attendance punches to /iclock/cdata. The
+// device keeps the fingerprint templates and does its own 1:N match; we only
+// receive the resulting PIN + timestamp. See docs/adms-integration.md.
+model Device {
+  id         String        @id @default(cuid())
+  serial     String        @unique
+  name       String        @default("ZKTeco device")
+  enabled    Boolean       @default(true)
+  lastSeenAt DateTime?
+  // Last `Stamp` the device reported. Echoed back on the next handshake so
+  // the device resumes instead of re-pushing its entire log every poll.
+  lastStamp  Int           @default(0)
+  createdAt  DateTime      @default(now())
+  punches    DevicePunch[]
+}
+
+// Raw punch log, one row per device ATTLOG line. The unique constraint is
+// the idempotency guard: ADMS re-sends unacknowledged batches, and the same
+// (device, pin, timestamp) must never be applied twice.
+model DevicePunch {
+  id         String   @id @default(cuid())
+  deviceId   String
+  device     Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  pin        String
+  punchedAt  DateTime
+  status     String   @default("")
+  verifyMode String   @default("")
+  workCode   String   @default("")
+  // TapResult.kind after applying the punch ("clocked_in", "clocked_out",
+  // "too_early", "already_complete", "not_recognized"). Null until processed.
+  result     String?
+  createdAt  DateTime @default(now())
+
+  @@unique([deviceId, pin, punchedAt])
+  @@index([deviceId, punchedAt])
+  @@index([punchedAt])
+}

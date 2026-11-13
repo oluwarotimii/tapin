@@ -131,12 +131,25 @@ export async function tapByStudentId(
   studentId: string,
   source = "tap",
 ): Promise<TapResult> {
+  return tapByStudentIdAt(studentId, new Date(), source)
+}
+
+// Same as tapByStudentId, but applies the tap relative to a supplied instant
+// instead of the server clock. Used by the ADMS receiver, where the punch
+// timestamp comes from the device — a batch that arrives late must still be
+// recorded against the time the student actually punched, not when it was
+// delivered.
+export async function tapByStudentIdAt(
+  studentId: string,
+  at: Date,
+  source = "tap",
+): Promise<TapResult> {
   return prisma.$transaction(async (tx) => {
     const student = await tx.student.findUnique({
       where: { studentId },
       include: { schedule: true, session: true },
     })
-    return performTap(tx, student, null, source)
+    return performTap(tx, student, null, source, at)
   })
 }
 
@@ -149,8 +162,9 @@ async function performTap(
   student: TappableStudent | null,
   cardId: string | null,
   source: string,
+  at: Date = new Date(),
 ): Promise<TapResult> {
-  const now = new Date()
+  const now = at
   const today = DAYS[now.getDay()]
 
   if (!student || student.status !== "active") {

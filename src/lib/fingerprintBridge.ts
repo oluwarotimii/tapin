@@ -18,6 +18,7 @@ import {
   captureDigitalPersonaSample,
   isDigitalPersonaAvailable,
 } from "./digitalPersona"
+import type { TapResult } from "./types"
 
 const BRIDGE_URL =
   process.env.NEXT_PUBLIC_FINGERPRINT_BRIDGE_URL ?? "http://127.0.0.1:8787"
@@ -65,12 +66,28 @@ export async function bridgeCapture(): Promise<string | null> {
 
 export type VerifyOutcome = "matched" | "no_match" | "not_enrolled" | "capture_failed"
 
-async function postVerify(studentId: string, image: string): Promise<VerifyOutcome> {
+// Captures one scan, trying DigitalPersona first and the generic bridge as
+// a fallback. Deliberately does NOT pre-check isDigitalPersonaAvailable():
+// that call itself enumerates devices, and runCapture enumerates them again,
+// so pre-checking cost a redundant IPC round-trip to the Lite Client on
+// every single verify. runCapture already returns null fast when no reader
+// is attached, so we just attempt it and fall through.
+async function captureAny(): Promise<string | null> {
+  const dpSample = await captureDigitalPersonaSample()
+  if (dpSample) return dpSample
+  return genericBridgeCapture()
+}
+
+// 1:1 verification only (no attendance write). Kept for external callers and
+// API compatibility; the kiosk itself uses verifyAndTapFingerprint below.
+export async function verifyFingerprint(studentId: string): Promise<VerifyOutcome> {
+  const sample = await captureAny()
+  if (!sample) return "capture_failed"
   try {
     const res = await fetch("/api/v1/fingerprint/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ student_id: studentId, image }),
+      body: JSON.stringify({ student_id: studentId, image: sample }),
       signal: withTimeout(15000),
     })
     if (!res.ok) return "capture_failed"
@@ -83,14 +100,35 @@ async function postVerify(studentId: string, image: string): Promise<VerifyOutco
   }
 }
 
-// 1:1 verification: the caller already knows who they're checking (picked
-// from a search), so this captures one scan and confirms it against just
-// that student's enrolled template — not a 1:N "who is this" search.
-export async function verifyFingerprint(studentId: string): Promise<VerifyOutcome> {
-  const dpAvailable = await isDigitalPersonaAvailable()
-  const sample = dpAvailable
-    ? await captureDigitalPersonaSample()
-    : await genericBridgeCapture()
-  if (!sample) return "capture_failed"
-  return postVerify(studentId, sample)
+export type VerifyAndTapResult = {
+  outcome: VerifyOutcome
+  tap: TapResult | null
+}
+
+// Capture + verify + clock in/out in ONE server round-trip. This is the
+// kiosk's tap-time path: it shaves a full network hop off the old
+// verify-then-tap sequence, which matters on the critical path where the
+// student is standing at the reader waiting.
+export async function verifyAndTapFingerprint(
+  studentId: string,
+): Promise<VerifyAndTapResult> {
+  const sample = await captureAny()
+  if (!sample) return { outcome: "capture_failed", tap: null }
+  try {
+    const res = await fetch("/api/v1/fingerprint/verify-and-tap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ student_id: studentId, image: sample }),
+      signal: withTimeout(15000),
+    })
+    if (!res.ok) return { outcome: "capture_failed", tap: null }
+    const j = await res.json()
+    const outcome: VerifyOutcome =
+      j.result === "matched" || j.result === "no_match" || j.result === "not_enrolled"
+        ? j.result
+        : "capture_failed"
+    return { outcome, tap: (j.tap as TapResult | undefined) ?? null }
+  } catch {
+    return { outcome: "capture_failed", tap: null }
+  }
 }

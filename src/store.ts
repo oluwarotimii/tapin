@@ -332,6 +332,14 @@ export const db = {
     return res.result
   },
 
+  // Applies an already-computed tap result to the local cache. Used when the
+  // server verifies the fingerprint and performs the tap in one round-trip
+  // (see /api/v1/fingerprint/verify-and-tap), so the client never needs a
+  // second /taps call just to update the UI.
+  applyTap(result: TapResult, cardId: string | null) {
+    applyTapResult(result, cardId)
+  },
+
   // ── attendance ─────────────────────────────────────────────────────────────
   getAttendance: (): AttendanceRecord[] => _c.attendance,
 

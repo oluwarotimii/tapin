@@ -83,6 +83,21 @@ export const reader = {
     tapListeners.forEach((l) => l(ev))
   },
 
+  // Same event pipeline as submitFingerprintTap, but for a tap result the
+  // server already produced during fingerprint verification
+  // (/api/v1/fingerprint/verify-and-tap) — no second network call.
+  emitVerifiedFingerprintTap(studentId: string, result: TapResult) {
+    if (status !== "connected") return
+    db.applyTap(result, null)
+    const ev: TapEvent = {
+      id: crypto.randomUUID(),
+      cardId: studentId,
+      result,
+      time: nowTime(),
+    }
+    tapListeners.forEach((l) => l(ev))
+  },
+
   writeCard(cardId: string, studentId: string) {
     return db.writeCard(studentId, cardId)
   },
